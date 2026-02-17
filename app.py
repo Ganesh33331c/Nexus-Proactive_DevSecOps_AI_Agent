@@ -2,6 +2,7 @@ import streamlit as st
 import google.generativeai as genai
 import nexus_agent_logic
 import os
+import importlib.metadata
 
 # --- 1. PAGE CONFIGURATION ---
 st.set_page_config(
@@ -11,7 +12,7 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# --- 2. CUSTOM CSS (Button-Style Input) ---
+# --- 2. CUSTOM CSS (Professional & Clean) ---
 st.markdown("""
 <style>
     /* IMPORT FONT */
@@ -83,56 +84,42 @@ st.markdown("""
         letter-spacing: 2px;
     }
 
-    /* --- ENTRY FIELD AS BUTTON (The Fix) --- */
+    /* --- NORMAL ENTRY FIELD (Restored) --- */
     .stTextInput > div > div > input {
         background-color: #ffffff !important; /* Solid White */
-        border: none;
-        color: #1e293b !important; /* Dark Text */
-        font-weight: 800; /* Bold Text */
-        border-radius: 50px; /* Full Pill Shape */
-        padding: 25px 0px; /* Tall clickable area */
-        font-size: 20px;
-        text-align: center; /* Center the text like a button */
-        box-shadow: 0 10px 25px rgba(0,0,0,0.2);
-        transition: all 0.3s ease;
+        border: 2px solid #e2e8f0;
+        color: #0f172a !important; /* Black Text */
+        font-weight: 500;
+        border-radius: 12px; /* Standard Rounded Corners */
+        padding: 15px 20px; /* Normal Padding */
+        font-size: 16px;
+        text-align: left; /* Normal Typing Direction */
+        box-shadow: 0 4px 10px rgba(0,0,0,0.1);
     }
     
-    /* Hover Effect for Input */
-    .stTextInput > div > div > input:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 15px 35px rgba(0,0,0,0.3);
-    }
-
-    /* Focus Effect */
     .stTextInput > div > div > input:focus {
-        border: 3px solid #3b82f6; /* Blue ring when typing */
-        outline: none;
-    }
-    
-    /* Placeholder Styling */
-    .stTextInput > div > div > input::placeholder {
-        color: #94a3b8;
-        font-weight: 600;
+        border-color: #2563eb;
+        box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.2);
     }
 
-    /* SUBMIT BUTTON (Gradient Pill) */
+    /* SUBMIT BUTTON */
     .stButton > button {
         width: 100%;
-        background: linear-gradient(90deg, #4f46e5 0%, #7c3aed 100%); /* Deep Violet */
+        background: linear-gradient(90deg, #4f46e5 0%, #7c3aed 100%);
         color: white !important;
         font-weight: 800;
-        border-radius: 50px;
-        padding: 18px 30px;
+        border-radius: 12px;
+        padding: 15px 30px;
         border: none;
         box-shadow: 0 5px 15px rgba(0,0,0,0.2);
         transition: all 0.3s ease;
-        font-size: 1.2rem;
-        margin-top: 15px;
+        font-size: 1.1rem;
+        margin-top: 5px;
     }
     
     .stButton > button:hover {
-        transform: scale(1.02);
-        box-shadow: 0 15px 30px rgba(124, 58, 237, 0.4);
+        transform: translateY(-2px);
+        box-shadow: 0 10px 25px rgba(124, 58, 237, 0.4);
     }
     
     /* HIDE DEFAULT UI */
@@ -160,8 +147,8 @@ st.markdown('<div class="agent-subtitle">Autonomous Security Auditor • Built b
 
 # INPUT FORM
 with st.form("scan_form"):
-    # This input now looks like a big white button
-    repo_url = st.text_input("TARGET REPOSITORY", placeholder="Paste GitHub URL Here...")
+    # Normal Input Field
+    repo_url = st.text_input("Target Repository URL", placeholder="https://github.com/owner/repo")
     st.write("") # Spacer
     
     # Centered Button
@@ -189,6 +176,13 @@ if scan_btn and repo_url:
     
     with st.status("⚙️ **NEXUS CORE ACTIVE**", expanded=True) as status:
         
+        # DEBUG CHECK: PRINT LIBRARY VERSION
+        try:
+            lib_ver = importlib.metadata.version("google-generativeai")
+            st.write(f"ℹ️ Google AI Library Version: {lib_ver}")
+        except:
+            st.write("ℹ️ Google AI Library Version: Unknown")
+            
         st.write("📡 Scanning Repository Manifest...")
         scan_data = nexus_agent_logic.scan_repo_manifest(repo_url)
         
@@ -198,16 +192,15 @@ if scan_btn and repo_url:
             
         st.write("🛡️ Cross-referencing CVE Database...")
         
-        # --- 🔍 SELF-HEALING AI MODEL SELECTOR ---
+        # --- 🔍 ROBUST MODEL SELECTOR ---
         response = None
         used_model = None
         
-        # Priority: 1.5-Flash (Fast) -> Pro (Stable) -> 1.0 (Legacy)
+        # Priority: Flash -> Pro -> Latest
         models_to_try = [
             'gemini-1.5-flash',
             'gemini-pro',
-            'gemini-1.5-pro-latest',
-            'gemini-1.0-pro'
+            'gemini-1.5-pro-latest'
         ]
         
         for m_name in models_to_try:
@@ -226,12 +219,12 @@ if scan_btn and repo_url:
                 5. Design the report to be clean, white, and corporate.
                 """
                 
-                # Test generation
                 response = model.generate_content(prompt)
                 used_model = m_name
-                break # Success!
-            except Exception:
-                continue # Try next model
+                break # Success
+            except Exception as e:
+                # st.write(f"Debug: {m_name} failed: {e}") # Uncomment to debug
+                continue 
         
         if response:
             report_html = response.text
@@ -246,5 +239,6 @@ if scan_btn and repo_url:
             
         else:
             st.error("❌ CRITICAL ERROR: All AI models failed.")
-            st.info("💡 DID YOU UPDATE REQUIREMENTS.TXT? You must add 'google-generativeai>=0.7.0' to your requirements.txt file on GitHub.")
+            st.warning("⚠️ If you see 'Library Version: 0.5.0' or lower above, the Reboot failed.")
+            st.info("Action: Go to 'Manage App' -> 'Reboot App' and wait 30 seconds.")
             st.stop()
