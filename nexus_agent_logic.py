@@ -4,85 +4,68 @@ import os
 
 def scan_repo_manifest(repo_url):
     """
-    Nexus Agent Tool: Diagnostic Mode
+    Nexus Agent Tool: Scan Repository Manifest
     """
-    # 1. Clean URL
+    
+    # 1. Sanitize URL to get "owner/repo"
     try:
-        # Remove trailing slash and .git
-        clean_url = repo_url.rstrip("/").rstrip(".git").split("github.com/")[-1]
-    except:
-        return json.dumps({"error": "Invalid URL format."})
+        clean_url = repo_url.rstrip(".git").split("github.com/")[-1]
+    except IndexError:
+        return json.dumps({"error": "Invalid GitHub URL format. Use https://github.com/owner/repo"})
 
     api_base = f"https://api.github.com/repos/{clean_url}/contents"
     
-    # 2. Setup Auth (Token is REQUIRED for Streamlit Cloud)
-    headers = {
-        "Accept": "application/vnd.github.v3+json"
+    report = {
+        "target": clean_url,
+        "critical_files_found": [],
+        "dependencies": [],
+        "scan_status": "Success"
     }
+
+    # 2. Prepare Authentication (THE CRITICAL FIX)
+    headers = {}
     
-    token_source = "None"
+    # Try to get token from Environment (Streamlit Secrets injects this into os.environ)
     token = os.environ.get('GITHUB_TOKEN')
     
-    # Check Environment Variable
     if token:
         headers['Authorization'] = f"token {token}"
-        token_source = "Environment (os.environ)"
     else:
-        # Check Streamlit Secrets directly
+        # Fallback: Try to find Streamlit secrets if not in env
         try:
             import streamlit as st
             if "GITHUB_TOKEN" in st.secrets:
                 headers['Authorization'] = f"token {st.secrets['GITHUB_TOKEN']}"
-                token_source = "Streamlit Secrets"
         except:
             pass
 
-    # 3. Initialize Report with Debug Info
-    report = {
-        "target": clean_url,
-        "debug_info": {
-            "token_source": token_source,
-            "api_url": api_base,
-            "status_code": "Not Run",
-            "files_found": []
-        },
-        "critical_files_found": [],
-        "dependencies": [],
-        "scan_status": "Failed"
-    }
-
-    # 4. Execute Request
+    # 3. List files via GitHub API
     try:
+        # We pass 'headers' here so GitHub knows who we are!
         resp = requests.get(api_base, headers=headers, timeout=10)
-        report["debug_info"]["status_code"] = resp.status_code
         
-        # ERROR HANDLING
         if resp.status_code == 403:
-            return json.dumps({"error": "CRITICAL: GitHub Rate Limit Hit. Your Token is NOT working.", "debug": report["debug_info"]})
+            return json.dumps({"error": "Rate Limit Exceeded or Bad Token. Check Streamlit Secrets."})
         elif resp.status_code == 404:
-            return json.dumps({"error": "Repository Not Found (Check URL)", "debug": report["debug_info"]})
+            return json.dumps({"error": "Repository not found or private."})
         elif resp.status_code != 200:
-            return json.dumps({"error": f"API Error {resp.status_code}", "debug": report["debug_info"]})
+            return json.dumps({"error": f"API Error: {resp.status_code}"})
         
-        # SUCCESS HANDLING
         files = resp.json()
-        file_names = [f['name'] for f in files]
-        report["debug_info"]["files_found"] = file_names # Log what we see
-        report["scan_status"] = "Success"
         
+        # 4. Hunt for 'requirements.txt'
         for f in files:
             name = f['name']
-            if name.lower() in ["requirements.txt", "package.json", "pipfile"]:
+            if name in ["requirements.txt", "package.json", "Pipfile", "setup.py"]:
                 report["critical_files_found"].append(name)
             
-            if name.lower() == "requirements.txt":
-                # Download the file content
-                dl_url = f['download_url']
-                file_resp = requests.get(dl_url, headers=headers, timeout=10)
-                deps = [line.strip() for line in file_resp.text.split('\n') if line.strip() and not line.startswith('#')]
+            # Fetch content of requirements.txt
+            if name == "requirements.txt":
+                req_resp = requests.get(f['download_url'], headers=headers, timeout=10)
+                deps = [line.strip() for line in req_resp.text.split('\n') if line.strip() and not line.startswith('#')]
                 report["dependencies"] = deps
 
     except Exception as e:
-        return json.dumps({"error": f"Crash: {str(e)}"})
+        return json.dumps({"error": f"Internal Agent Error: {str(e)}"})
 
     return json.dumps(report, indent=2)
