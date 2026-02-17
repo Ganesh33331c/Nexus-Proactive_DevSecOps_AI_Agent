@@ -50,6 +50,12 @@ if scan_btn and repo_url and api_key:
                 os.environ["GITHUB_TOKEN"] = st.secrets["GITHUB_TOKEN"]
                 
             scan_data = nexus_agent_logic.scan_repo_manifest(repo_url)
+            
+            # --- 🔍 DEBUG MODE (ADD THIS BLOCK) ---
+            with st.expander("VIEW RAW SCANNER DATA (Click to Debug)", expanded=True):
+                st.code(scan_data, language='json')
+            # -------------------------------------
+
             st.success("Repository manifest scanned successfully!")
         except Exception as e:
             st.error(f"Tool Error: {e}")
@@ -121,5 +127,6 @@ if scan_btn and repo_url and api_key:
 elif scan_btn and not api_key:
 
     st.warning("Please provide a Gemini API Key to proceed.")
+
 
 
