@@ -5,118 +5,135 @@ import os
 
 # --- 1. PAGE CONFIGURATION ---
 st.set_page_config(
-    page_title="Nexus | DevSecOps Agent",
+    page_title="Nexus DevSecOps Agent",
     page_icon="🛡️",
-    layout="wide",
+    layout="centered", # Centered layout focuses attention
     initial_sidebar_state="collapsed"
 )
 
-# --- 2. CUSTOM CSS (Dark Glass for Readability) ---
+# --- 2. CUSTOM CSS (Colorful & Sharp) ---
 st.markdown("""
 <style>
-    /* IMPORT FONTS */
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap');
+    /* IMPORT FONT */
+    @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;800&display=swap');
 
-    /* BACKGROUND IMAGE (Fixed & Darkened) */
+    /* BACKGROUND: Vibrant Gradient (No Image, just pure colorful CSS) */
     .stApp {
-        background: linear-gradient(rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0.5)), url("https://images.unsplash.com/photo-1550751827-4bd374c3f58b?q=80&w=2070&auto=format&fit=crop");
-        background-size: cover;
-        background-position: center;
-        background-attachment: fixed;
+        background: linear-gradient(-45deg, #ee7752, #e73c7e, #23a6d5, #23d5ab);
+        background-size: 400% 400%;
+        animation: gradient 15s ease infinite;
+    }
+    
+    @keyframes gradient {
+        0% {background-position: 0% 50%;}
+        50% {background-position: 100% 50%;}
+        100% {background-position: 0% 50%;}
     }
 
-    /* DARK GLASS CONTAINER (Solves Text Visibility) */
-    .glass-container {
-        background: rgba(17, 25, 40, 0.75); /* Dark semi-transparent background */
-        backdrop-filter: blur(16px);
-        -webkit-backdrop-filter: blur(16px);
-        border-radius: 12px;
-        border: 1px solid rgba(255, 255, 255, 0.125);
-        padding: 40px;
-        box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+    /* THE MAIN CARD (Solid White, No Blur) */
+    .main-card {
+        background-color: #ffffff;
+        padding: 3rem;
+        border-radius: 24px;
+        box-shadow: 0 20px 50px rgba(0,0,0,0.3);
+        margin-top: 2rem;
+        border: 1px solid #e0e0e0;
     }
 
     /* TYPOGRAPHY */
-    h1, h2, h3, p, span, div {
-        color: #ffffff !important; /* Force all text white */
-        font-family: 'Inter', sans-serif;
+    h1, h2, h3, p, div, span {
+        font-family: 'Outfit', sans-serif !important;
+        color: #1e293b; /* Dark Slate for high readability */
     }
 
-    .main-title {
-        font-size: 3.5rem;
+    .agent-title {
+        font-size: 3rem;
         font-weight: 800;
-        background: -webkit-linear-gradient(#4facfe, #00f2fe);
+        text-align: center;
+        background: linear-gradient(90deg, #2563eb, #db2777);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
-        margin-bottom: 0px;
+        margin-bottom: 0.5rem;
     }
 
-    .creator-badge {
-        font-size: 1rem;
-        color: #a0a0a0 !important;
-        font-weight: 500;
-        margin-bottom: 1.5rem;
-        letter-spacing: 1px;
+    .agent-subtitle {
+        text-align: center;
+        font-size: 1.1rem;
+        color: #64748b;
+        font-weight: 600;
+        margin-bottom: 2rem;
+        text-transform: uppercase;
+        letter-spacing: 2px;
     }
 
-    /* INPUT FIELD STYLING (High Contrast) */
+    /* INPUT FIELD (Big & Clean) */
     .stTextInput > div > div > input {
-        background-color: #ffffff; /* White background */
-        color: #000000 !important; /* Black text */
-        border-radius: 8px;
-        border: none;
-        padding: 12px;
+        background-color: #f8fafc;
+        border: 2px solid #e2e8f0;
+        color: #0f172a;
+        border-radius: 12px;
+        padding: 16px;
+        font-size: 18px;
+    }
+    .stTextInput > div > div > input:focus {
+        border-color: #2563eb;
+        box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.1);
     }
 
-    /* BUTTON STYLING */
+    /* BUTTON (Pill Shape) */
     .stButton > button {
         width: 100%;
-        background: linear-gradient(90deg, #0061ff 0%, #60efff 100%);
-        color: #000000 !important;
+        background-color: #0f172a; /* Midnight Blue */
+        color: white !important;
         font-weight: 700;
+        border-radius: 50px; /* Pill shape */
+        padding: 12px 24px;
         border: none;
-        padding: 0.75rem;
-        border-radius: 8px;
         transition: all 0.3s ease;
+        font-size: 1.1rem;
     }
     .stButton > button:hover {
-        transform: scale(1.02);
-        box-shadow: 0 0 15px rgba(0, 242, 254, 0.5);
+        background-color: #2563eb; /* Bright Blue on Hover */
+        transform: translateY(-2px);
+        box-shadow: 0 10px 20px rgba(37, 99, 235, 0.2);
     }
 
-    /* HIDE STREAMLIT BRANDING */
+    /* HIDE STREAMLIT UI */
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
+    header {visibility: hidden;}
 </style>
 """, unsafe_allow_html=True)
 
 # --- 3. UI LAYOUT ---
-col1, col2, col3 = st.columns([1, 6, 1])
 
-with col2:
-    # DARK GLASS CONTAINER START
-    st.markdown('<div class="glass-container">', unsafe_allow_html=True)
+# START WHITE CARD CONTAINER
+st.markdown('<div class="main-card">', unsafe_allow_html=True)
+
+# FULL AGENT NAME
+st.markdown('<h1 class="agent-title">NEXUS DEVSECOPS AGENT</h1>', unsafe_allow_html=True)
+st.markdown('<div class="agent-subtitle">Autonomous Security Auditor • Built by Ganesh</div>', unsafe_allow_html=True)
+
+st.markdown("""
+<div style="text-align: center; margin-bottom: 25px; color: #475569;">
+    Enter a public GitHub repository URL below. Nexus will perform a deep manifest scan 
+    and cross-reference dependencies against the CVE database.
+</div>
+""", unsafe_allow_html=True)
+
+# INPUT FORM
+with st.form("scan_form"):
+    repo_url = st.text_input("Repository URL", placeholder="https://github.com/owner/repo")
+    st.markdown("<br>", unsafe_allow_html=True)
     
-    st.markdown('<h1 class="main-title">NEXUS AGENT</h1>', unsafe_allow_html=True)
-    st.markdown('<div class="creator-badge">⚡ CREATED BY GANESH | POWERED BY GEMINI 2.5</div>', unsafe_allow_html=True)
-    
-    st.markdown("""
-    <p style='font-size: 1.1rem; opacity: 0.9;'>
-        <b>Enterprise DevSecOps Scanner.</b><br>
-        Enter a GitHub repository URL below to initiate an autonomous vulnerability audit.
-    </p>
-    """, unsafe_allow_html=True)
+    # Centered Button
+    c1, c2, c3 = st.columns([1, 2, 1])
+    with c2:
+        scan_btn = st.form_submit_button("🚀 START SECURITY AUDIT")
 
-    with st.form("scan_form"):
-        repo_url = st.text_input("Target Repository URL", placeholder="https://github.com/we45/Vulnerable-Flask-App")
-        st.write("") # Spacer
-        
-        c1, c2 = st.columns([2, 1])
-        with c2:
-            scan_btn = st.form_submit_button("🚀 INITIALIZE SCAN")
+st.markdown('</div>', unsafe_allow_html=True)
+# END WHITE CARD CONTAINER
 
-    st.markdown('</div>', unsafe_allow_html=True)
-    # GLASS CONTAINER END
 
 # --- 4. SECRETS & SETUP ---
 api_key = None
@@ -128,58 +145,58 @@ if "GITHUB_TOKEN" in st.secrets:
 if api_key:
     genai.configure(api_key=api_key)
 
-# --- 5. LOGIC & AI CORE ---
+# --- 5. EXECUTION LOGIC ---
 if scan_btn and repo_url:
     if not api_key:
-        st.error("❌ System Error: API Key missing in Secrets.")
+        st.error("❌ API Key Error: Please check Streamlit Secrets.")
         st.stop()
         
-    st.markdown("---")
+    st.markdown("<br>", unsafe_allow_html=True)
     
-    with st.status("🕵️ **Nexus is investigating target...**", expanded=True) as status:
+    # Use a container for the status to keep it clean
+    with st.status("⚙️ **Nexus Operations Active**", expanded=True) as status:
         
-        # STEP 1: SCAN
-        st.write("📡 Establishing secure connection to GitHub...")
+        # STEP 1: SCAN TOOL
+        st.write("📡 Scanning Repository Structure...")
         scan_data = nexus_agent_logic.scan_repo_manifest(repo_url)
         
-        # DEBUG (Hidden by default)
-        with st.expander("🛠️ View Raw Diagnostic Data", expanded=False):
+        # DEBUG DATA (Hidden - Clean UI)
+        with st.expander("Show Diagnostic Data (Debug)", expanded=False):
             st.code(scan_data, language='json')
             
-        st.write("🧠 Cross-referencing dependencies with CVE Database...")
+        st.write("🛡️ Analyzing Vulnerabilities...")
         
-        # STEP 2: REASONING (Fixed Model Selection)
+        # STEP 2: AI ANALYSIS (FIXED MODEL)
         try:
-            # FORCE GEMINI 1.5 FLASH (Most Reliable Model)
-            model = genai.GenerativeModel('gemini-1.5-flash')
+            # FIX: We use 'gemini-pro' which is the standard stable model.
+            # This fixes the "404 Not Found" error for Flash.
+            model = genai.GenerativeModel('gemini-pro')
             
             prompt = f"""
-            You are Nexus, an elite DevSecOps AI.
+            You are Nexus, a DevSecOps AI.
             Analyze this repository scan: {scan_data}
             
             Task:
-            1. Identify critical vulnerabilities in the dependencies.
-            2. Explain *why* they are dangerous (RCE, XSS, etc.).
-            3. Provide exact 'pip install' remediation commands.
+            1. Identify critical vulnerabilities.
+            2. Explain the risk (RCE, XSS, etc.).
+            3. Provide remediation commands.
             4. Output a professional HTML report using Tailwind CSS. 
-            5. Use a 'Light Mode' clean corporate style for the report HTML.
+            5. Design the report to be clean, white, and corporate (Light Mode).
             """
             
             response = model.generate_content(prompt)
             report_html = response.text
             
-            # Clean Markdown
+            # Clean Markdown wrappers
             if "```html" in report_html:
                 report_html = report_html.replace("```html", "").replace("```", "")
             
-            status.update(label="✅ **Mission Complete. Threat Level Calculated.**", state="complete", expanded=False)
+            status.update(label="✅ **Audit Successfully Completed**", state="complete", expanded=False)
             
         except Exception as e:
-            st.error(f"AI Core Malfunction: {e}")
-            # Fallback for debugging
-            st.warning("Ensure 'gemini-1.5-flash' is supported by your API key.")
+            st.error(f"AI Engine Error: {e}")
             st.stop()
 
     # DISPLAY REPORT
-    st.markdown("### 📊 Final Audit Report")
+    st.markdown("### 📊 Vulnerability Report")
     st.components.v1.html(report_html, height=800, scrolling=True)
