@@ -15,7 +15,7 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# --- 2. CUSTOM CSS (Professional UI) ---
+# --- 2. CUSTOM CSS (Professional UI & Visible Text) ---
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;800&display=swap');
@@ -81,7 +81,6 @@ st.markdown("""
         letter-spacing: 2px;
     }
 
-    /* Forced Dark Text for Visibility */
     .stTextArea > div > div > textarea {
         background-color: #ffffff !important;
         border: 2px solid #e2e8f0;
@@ -110,59 +109,74 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# --- 3. THE "NUCLEAR" SCANNER TOOL ---
+# --- 3. PATH-INTELLIGENT "NUCLEAR" SCANNER TOOL ---
 
-def scan_code_for_patterns(root_dir):
+def find_python_root(start_path):
+    """Recursively finds the first folder containing .py files."""
+    for dirpath, _, filenames in os.walk(start_path):
+        if any(f.endswith(".py") for f in filenames):
+            return dirpath
+    return start_path
+
+def scan_code_for_patterns(base_dir):
     """
-    Recursively scans all files in root_dir for dangerous security patterns using Regex.
-   
+    Performs a path-intelligent recursive Regex scan for RCE, Secrets, and Injection.
     """
-    findings = []
+    actual_path = find_python_root(base_dir) #
+    findings = [f"[DEBUG] Scanning directory: {actual_path}"] #
+
+    # Expanded Pattern Database
     patterns = {
+        # --- RCE & Arbitrary Code Execution ---
         r'yaml\.load\(': "RCE Risk (Unsafe Deserialization)",
         r'pickle\.load\(': "RCE Risk (Unsafe Deserialization)",
         r'eval\(': "Arbitrary Code Execution",
         r'exec\(': "Arbitrary Code Execution",
+        
+        # --- Command & SQL Injection ---
         r'os\.system\(': "Command Injection",
         r'subprocess\.Popen.*shell=True': "Command Injection",
-        r'raw_input\(': "Python 2 Compatibility / Legacy Risk"
+        r'cursor\.execute\(f"': "Potential SQL Injection (F-String)",
+        r'cursor\.execute\(".*%s" %': "Potential SQL Injection (Percent Operator)",
+        
+        # --- Hardcoded Secrets & Credentials ---
+        r'(?i)(api_key|secret_key|password|token)\s*=\s*[\'"][a-zA-Z0-9_\-]{16,}[\'"]': "Hardcoded Secret/Credential Found",
+        r'mongodb\+srv://.*:.*@': "Hardcoded MongoDB Connection String",
+        r'postgres://.*:.*@': "Hardcoded PostgreSQL Connection String",
+        
+        # --- Insecure Flask/Web Settings ---
+        r'app\.run\(.*debug=True': "Flask Debug Mode Enabled in Production",
+        r'verify=False': "SSL Verification Disabled (MITM Risk)"
     }
 
-    if not os.path.exists(root_dir):
-        return "SAFE: No directory found to scan."
+    if not os.path.exists(actual_path):
+        findings.append("SAFE: No directory found to scan.")
+        return "\n".join(findings)
 
-    for dirpath, _, filenames in os.walk(root_dir):
+    for dirpath, _, filenames in os.walk(actual_path):
         for filename in filenames:
             filepath = os.path.join(dirpath, filename)
-            
-            # Skip hidden files or common binaries
-            if filename.startswith('.') or filename.lower().endswith(('.png', '.jpg', '.pyc', '.git')):
+            if filename.startswith('.') or filename.lower().endswith(('.png', '.jpg', '.pyc', '.exe')):
                 continue
 
             try:
                 with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
-                    lines = f.readlines()
-
-                for i, line in enumerate(lines):
-                    for pattern, risk in patterns.items():
-                        if re.search(pattern, line):
-                            clean_line = line.strip()[:100]
-                            rel_path = os.path.relpath(filepath, root_dir)
-                            findings.append(
-                                f"[CRITICAL] Found '{pattern.replace(r'\\\\', '')}' "
-                                f"in {rel_path} at line {i+1}: \"{clean_line}\" "
-                                f"({risk})"
-                            )
+                    for i, line in enumerate(f):
+                        for pattern, risk in patterns.items():
+                            if re.search(pattern, line):
+                                clean_line = line.strip()[:100]
+                                rel_path = os.path.relpath(filepath, base_dir)
+                                findings.append(
+                                    f"[CRITICAL] Found '{risk}' in {rel_path} at line {i+1}: \"{clean_line}\""
+                                )
             except Exception:
                 continue
 
-    if not findings:
-        return "SAFE: No critical patterns found."
-
+    if len(findings) == 1:
+        findings.append("SAFE: No critical patterns found.")
     return "\n".join(findings)
 
 # --- 4. UI LAYOUT ---
-
 st.markdown('<div class="logo-container"><div class="nexus-logo">🛡️</div></div>', unsafe_allow_html=True)
 st.markdown('<h1 class="agent-title">NEXUS AGENT</h1>', unsafe_allow_html=True)
 st.markdown('<div class="agent-subtitle">Nuclear SAST & SCA Auditor • Built by Ganesh</div>', unsafe_allow_html=True)
@@ -188,8 +202,7 @@ if scan_btn and repo_url:
     st.markdown("<br>", unsafe_allow_html=True)
     
     with st.status("⚙️ **NEXUS CORE ACTIVE**", expanded=True) as status:
-        
-        # SCA: Manifest Scan
+        # 1. SCA: Manifest Scan
         st.write("📡 Scanning Repository Manifest...")
         raw_output = nexus_agent_logic.scan_repo_manifest(repo_url)
         
@@ -198,7 +211,7 @@ if scan_btn and repo_url:
             except: scan_data = {"raw_output": raw_output}
         else: scan_data = raw_output
 
-        # SAST: Nuclear Regex Scan
+        # 2. SAST: Nuclear Regex Scan
         st.write("🔬 Initializing Nuclear Regex Scanner...")
         scanner_output = scan_code_for_patterns("repo_clone")
         scan_data["nuclear_sast_results"] = scanner_output
@@ -208,21 +221,20 @@ if scan_btn and repo_url:
             
         st.write("🛡️ Cross-referencing CVE Database...")
         
-        # MODEL SELECTION
+        # 3. MODEL SELECTION & REPORT
         try:
             model_names = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
             used_model = next((m for m in model_names if 'flash' in m), model_names[0])
             model = genai.GenerativeModel(used_model)
             
-            # UPDATED SYSTEM PROMPT
             prompt = f"""
             You are Nexus, a DevSecOps AI. 
             Analyze this repository scan: {scan_data}
             
-            ### MANDATORY PROTOCOL:
-            1. VERBATIM REPORTING: If 'nuclear_sast_results' contains lines starting with [CRITICAL], you MUST include them exactly.
-            2. EVIDENCE SECTION: Create a 'Code Evidence' section in the HTML report using a dark terminal style.
-            3. ANALYSIS: Explain the risk (RCE, Injection) for each finding.
+            MANDATORY PROTOCOL:
+            1. VERBATIM REPORTING: Include any [CRITICAL] findings from 'nuclear_sast_results'.
+            2. EVIDENCE SECTION: Use a dark terminal style in the HTML report.
+            3. ANALYSIS: Explain risks (RCE, Injection, Exposed Secrets).
             
             Output a professional HTML report using Tailwind CSS.
             """
@@ -234,7 +246,6 @@ if scan_btn and repo_url:
             st.markdown("### 📊 VULNERABILITY REPORT")
             st.components.v1.html(report_html, height=800, scrolling=True)
             
-            # Download Button
             st.download_button(label="📥 Download Report (.html)", data=report_html, file_name=f"Nexus_Audit_{datetime.now().strftime('%Y%m%d')}.html", mime="text/html")
             
         except Exception as e:
