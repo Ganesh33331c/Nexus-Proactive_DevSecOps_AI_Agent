@@ -3,8 +3,6 @@ import google.generativeai as genai
 import nexus_agent_logic
 import os
 import importlib.metadata
-import io
-import uuid
 from datetime import datetime
 
 # --- 1. PAGE CONFIGURATION ---
@@ -15,7 +13,7 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# --- 2. CUSTOM CSS (Cursor Fix + Professional UI) ---
+# --- 2. CUSTOM CSS (Professional UI) ---
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;800&display=swap');
@@ -131,40 +129,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# --- 3. HELPER FUNCTIONS (Feature 1: Report Generator) ---
-def generate_audit_file(repo_url, scan_data, report_content):
-    """
-    Generates a professional text report file in memory.
-    """
-    buffer = io.BytesIO()
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    session_id = str(uuid.uuid4())[:8]
-
-    header = (
-        "=================================================================\n"
-        "                     NEXUS SECURITY AUDIT REPORT                 \n"
-        "=================================================================\n"
-        f"Date/Time:  {timestamp}\n"
-        f"Session ID: {session_id}\n"
-        f"Target URL: {repo_url}\n"
-        "-----------------------------------------------------------------\n\n"
-    )
-    buffer.write(header.encode('utf-8'))
-    
-    # Add Technical Scan Data
-    buffer.write("--- [RAW MANIFEST SCAN DATA] ---\n".encode('utf-8'))
-    buffer.write(f"{scan_data}\n\n".encode('utf-8'))
-    
-    # Add The Full AI Analysis
-    buffer.write("--- [AI SECURITY ANALYSIS] ---\n".encode('utf-8'))
-    # Clean up HTML tags for the text file version if needed, 
-    # but saving the raw HTML content is also useful for structure.
-    buffer.write(report_content.encode('utf-8'))
-    
-    buffer.seek(0)
-    return buffer.getvalue()
-
-# --- 4. UI LAYOUT ---
+# --- 3. UI LAYOUT ---
 
 st.markdown("""
 <div class="logo-container">
@@ -177,9 +142,8 @@ st.markdown("""
 st.markdown('<h1 class="agent-title">NEXUS DEVSECOPS AGENT</h1>', unsafe_allow_html=True)
 st.markdown('<div class="agent-subtitle">Autonomous Security Auditor • Built by Ganesh</div>', unsafe_allow_html=True)
 
-# --- FEATURE 2: ENHANCED INPUT FORM ---
+# --- INPUT FORM (Enhanced Text Area) ---
 with st.form(key="nexus_input_form"):
-    # Replaced single-line input with multi-line Text Area
     repo_url = st.text_area(
         "Target Repository URL", 
         height=100,
@@ -194,7 +158,7 @@ with st.form(key="nexus_input_form"):
     with c2:
         scan_btn = st.form_submit_button("🚀 LAUNCH")
 
-# --- 5. SECRETS & SETUP ---
+# --- 4. SECRETS & SETUP ---
 api_key = None
 if "GEMINI_API_KEY" in st.secrets:
     api_key = st.secrets["GEMINI_API_KEY"]
@@ -204,7 +168,7 @@ if "GITHUB_TOKEN" in st.secrets:
 if api_key:
     genai.configure(api_key=api_key)
 
-# --- 6. EXECUTION LOGIC ---
+# --- 5. EXECUTION LOGIC ---
 if scan_btn and repo_url:
     if not api_key:
         st.error("❌ API Key Error: Please check Streamlit Secrets.")
@@ -273,6 +237,7 @@ if scan_btn and repo_url:
         
         if response:
             report_html = response.text
+            # Cleanup Markdown wrapper if present
             if "```html" in report_html:
                 report_html = report_html.replace("```html", "").replace("```", "")
             
@@ -282,16 +247,17 @@ if scan_btn and repo_url:
             st.markdown("### 📊 VULNERABILITY REPORT")
             st.components.v1.html(report_html, height=800, scrolling=True)
             
-            # --- FEATURE 1: DOWNLOAD BUTTON ---
+            # --- NEW FEATURE: HTML REPORT DOWNLOAD ---
             st.markdown("---")
-            col_dl1, col_dl2 = st.columns([3, 1])
+            col_dl1, col_dl2 = st.columns([3, 2])
             with col_dl2:
-                # Generate the file in memory
-                text_file = generate_audit_file(repo_url, scan_data, report_html)
+                # We download the Raw HTML string directly.
+                # This ensures the visual format (colors, fonts, layout) is exactly preserved.
                 
                 st.download_button(
-                    label="📥 Download Full Report (.txt)",
-                    data=text_file,
-                    file_name=f"Nexus_Audit_{datetime.now().strftime('%Y%m%d')}.txt",
-                    mime="text/plain"
+                    label="📥 Download Full Report (.html)",
+                    data=report_html,
+                    file_name=f"Nexus_Audit_Report_{datetime.now().strftime('%Y%m%d')}.html",
+                    mime="text/html",
+                    help="Download the report with full visual formatting (colors, layout)."
                 )
