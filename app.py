@@ -6,6 +6,7 @@ import re
 import json
 import tempfile
 import shutil
+import time
 from git import Repo
 import importlib.metadata
 from datetime import datetime
@@ -143,28 +144,41 @@ if scan_btn and repo_url:
             
             scan_data = {"cloned_path": cloned_path, "sast": sast_results, "sca": sca_data}
             
-            # --- DYNAMIC MODEL FINDER (FIXES 404 ERROR) ---
+            # --- INTELLIGENT MODEL SELECTOR ---
             st.write("🛡️ Determining compatible AI model...")
             all_models = list(genai.list_models())
             available_models = [m.name for m in all_models if 'generateContent' in m.supported_generation_methods]
             
-            if not available_models:
-                st.error("❌ Your API Key does not have access to any Gemini text models.")
-                st.stop()
-            
-            # Prefer 1.5-flash, then 1.0-pro, then whatever is first
-            best_model = next((m for m in available_models if "1.5-flash" in m), 
-                         next((m for m in available_models if "pro" in m), available_models[0]))
+            # PRIORITY LIST: Flash is faster and has higher limits
+            priority_models = ["models/gemini-1.5-flash", "models/gemini-1.5-flash-8b", "models/gemini-1.0-pro"]
+            best_model = available_models[0]
+            for p in priority_models:
+                if p in available_models:
+                    best_model = p
+                    break
             
             model = genai.GenerativeModel(best_model)
-            prompt = f"Analyze this repository: {scan_data}\n\nMANDATORY PROTOCOL:\n1. Use 'cloned_path'.\n2. Verbatim report all [CRITICAL] findings.\n3. Create a dark terminal 'Code Evidence' section in HTML.\nOutput professional Tailwind CSS HTML."
+            prompt = f"Analyze this repository scan: {scan_data}\n\nMANDATORY PROTOCOL:\n1. Use 'cloned_path'.\n2. Verbatim report all [CRITICAL] findings.\n3. Create a dark terminal 'Code Evidence' section in HTML.\nOutput professional Tailwind CSS HTML."
             
-            response = model.generate_content(prompt)
-            report_html = response.text.replace("```html", "").replace("```", "")
-            
-            status.update(label=f"✅ AUDIT COMPLETE ({best_model})", state="complete", expanded=False)
-            st.components.v1.html(report_html, height=800, scrolling=True)
-            st.download_button("📥 Download Report", data=report_html, file_name="Nexus_Audit.html", mime="text/html")
+            # --- RETRY LOGIC FOR QUOTA ---
+            response = None
+            max_retries = 3
+            for i in range(max_retries):
+                try:
+                    response = model.generate_content(prompt)
+                    break
+                except Exception as e:
+                    if "429" in str(e) and i < max_retries - 1:
+                        st.warning(f"⚠️ Quota hit. Waiting 30s to retry... (Attempt {i+1}/{max_retries})")
+                        time.sleep(31)
+                    else:
+                        raise e
+
+            if response:
+                report_html = response.text.replace("```html", "").replace("```", "")
+                status.update(label=f"✅ AUDIT COMPLETE ({best_model})", state="complete", expanded=False)
+                st.components.v1.html(report_html, height=800, scrolling=True)
+                st.download_button("📥 Download Report", data=report_html, file_name="Nexus_Audit.html", mime="text/html")
             
     except Exception as e:
         st.error(f"❌ Error during scan: {e}")
