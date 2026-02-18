@@ -3,7 +3,7 @@ import google.generativeai as genai
 import nexus_agent_logic
 import os
 import ast
-import json  # Added json for parsing
+import json
 import importlib.metadata
 from datetime import datetime
 
@@ -15,7 +15,7 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# --- 2. CUSTOM CSS (Professional UI) ---
+# --- 2. CUSTOM CSS (Professional UI & Visible Text) ---
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;800&display=swap');
@@ -87,11 +87,13 @@ st.markdown("""
     }
 
     /* --- ENHANCED INPUT FIELD (Text Area) --- */
+    /* FIX: Force Dark Text on White Background */
     .stTextArea > div > div > textarea {
-        background-color: rgba(255, 255, 255, 0.9) !important;
+        background-color: #ffffff !important; /* Solid White */
         border: 2px solid #e2e8f0;
-        color: #0f172a !important; /* Dark Text */
-        font-weight: 500;
+        color: #000000 !important; /* PURE BLACK TEXT */
+        caret-color: #000000; /* Black blinking cursor */
+        font-weight: 600;
         border-radius: 12px;
         padding: 15px;
         font-size: 16px;
@@ -133,17 +135,24 @@ st.markdown("""
 
 # --- 3. SAST TOOLS ---
 
+def list_all_python_files(root_dir):
+    """Recursively finds all .py files in the directory tree."""
+    python_files = []
+    for dirpath, _, filenames in os.walk(root_dir):
+        for file in filenames:
+            if file.endswith(".py"):
+                full_path = os.path.join(dirpath, file)
+                python_files.append(full_path)
+    return python_files
+
 def read_code_file(filepath, base_dir=None):
     """Safely reads file content (first 300 lines) for analysis."""
     if base_dir is None:
         base_dir = os.getcwd()
     
     abs_base = os.path.abspath(base_dir)
-    abs_target = os.path.abspath(os.path.join(abs_base, filepath))
+    abs_target = os.path.abspath(filepath)
     
-    if not abs_target.startswith(abs_base):
-        return f"# Error: Security Access Denied. Cannot read {filepath}."
-        
     if not os.path.exists(abs_target):
         return f"# Error: File {filepath} not found."
 
@@ -176,16 +185,19 @@ def scan_code_for_patterns(filepath, library_name):
         class SecurityVisitor(ast.NodeVisitor):
             def visit_Call(self, node):
                 msg = None
+                # Check 1: PyYAML
                 if library_name.lower() == 'pyyaml':
                     if isinstance(node.func, ast.Attribute) and node.func.attr == 'load':
                          if isinstance(node.func.value, ast.Name) and node.func.value.id == 'yaml':
                              msg = "Unsafe yaml.load() detected. RCE Risk."
 
+                # Check 2: Pickle
                 elif library_name.lower() == 'pickle':
                     if isinstance(node.func, ast.Attribute) and node.func.attr in ['load', 'loads']:
                         if isinstance(node.func.value, ast.Name) and node.func.value.id == 'pickle':
                              msg = "Insecure pickle deserialization detected."
 
+                # Check 3: Subprocess/OS
                 elif library_name.lower() in ['subprocess', 'os']:
                     for keyword in node.keywords:
                         if keyword.arg == 'shell' and isinstance(keyword.value, ast.Constant) and keyword.value.value is True:
@@ -204,7 +216,7 @@ def scan_code_for_patterns(filepath, library_name):
     
     if findings:
         return "\n".join(findings)
-    return "No static patterns found."
+    return ""
 
 # --- 4. UI LAYOUT ---
 
@@ -262,16 +274,13 @@ if scan_btn and repo_url:
             
         st.write("📡 Scanning Repository Manifest...")
         
-        # 1. Get raw output (might be string or dict)
         raw_scan_output = nexus_agent_logic.scan_repo_manifest(repo_url)
         
-        # 2. BUG FIX: Convert String to Dict if necessary
+        # Convert to Dict
         if isinstance(raw_scan_output, str):
             try:
-                # Try parsing JSON string to Dict
                 scan_data = json.loads(raw_scan_output)
             except json.JSONDecodeError:
-                # If not JSON, wrap the raw string in a dict structure
                 scan_data = {"raw_scan_output": raw_scan_output}
         elif isinstance(raw_scan_output, dict):
             scan_data = raw_scan_output
@@ -279,25 +288,27 @@ if scan_btn and repo_url:
             scan_data = {"error": "Unknown scan output format"}
 
         # --- SAST LOGIC ---
-        st.write("🔬 Performing Static Code Analysis (SAST)...")
+        st.write("🔬 Performing Recursive Static Code Analysis (SAST)...")
         sast_findings = ""
         
-        # NOTE: This only works if files were cloned locally. 
-        # Ideally, nexus_agent_logic should handle cloning to a temp dir.
+        # NOTE: nexus_agent_logic MUST clone repo to 'repo_clone' for this to work
         if os.path.exists("repo_clone"): 
-            for root, dirs, files in os.walk("repo_clone"):
-                for file in files:
-                    if file.endswith(".py"):
-                        full_path = os.path.join(root, file)
-                        patterns = scan_code_for_patterns(full_path, "PyYAML") # Example check
-                        if patterns:
-                            sast_findings += f"\nFile: {file}\n{patterns}\n"
+            all_py_files = list_all_python_files("repo_clone")
+            st.write(f"ℹ️ Analyzing {len(all_py_files)} Python files...")
+            
+            for full_path in all_py_files:
+                rel_path = os.path.relpath(full_path, "repo_clone")
+                
+                # Check patterns
+                for lib in ["PyYAML", "pickle", "subprocess"]:
+                    patterns = scan_code_for_patterns(full_path, lib)
+                    if patterns:
+                        sast_findings += f"\nFile: {rel_path}\n{patterns}\n"
 
-        # Safe Assignment (Now that scan_data is guaranteed to be a dict)
         if sast_findings:
             scan_data["sast_analysis"] = sast_findings
         else:
-            scan_data["sast_analysis"] = "No critical static patterns found in scanned files."
+            scan_data["sast_analysis"] = "No critical static patterns found."
 
         
         with st.expander("Show Diagnostic Data", expanded=False):
