@@ -5,6 +5,7 @@ import os
 import re
 import json
 import tempfile
+import shutil  # Added for directory cleanup
 from git import Repo
 import importlib.metadata
 from datetime import datetime
@@ -42,9 +43,7 @@ st.markdown("""
     }
 
     .logo-container {
-        display: flex;
-        justify-content: center;
-        margin-bottom: 20px;
+        display: flex; justify-content: center; margin-bottom: 20px;
     }
     
     .nexus-logo {
@@ -89,16 +88,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# --- 3. ROBUST CLONE & SCAN TOOLS ---
-
-def clone_repository(repo_url):
-    """Clones a repo into a unique temp directory and returns the absolute path."""
-    try:
-        target_dir = tempfile.mkdtemp() #
-        Repo.clone_from(repo_url, target_dir)
-        return os.path.abspath(target_dir) #
-    except Exception as e:
-        return f"Error: Failed to clone repository. {str(e)}"
+# --- 3. TOOLS ---
 
 def find_python_root(start_path):
     """Recursively finds the first folder containing .py files."""
@@ -156,32 +146,33 @@ if scan_btn and repo_url:
     if not api_key: st.error("❌ API Key Missing"); st.stop()
     genai.configure(api_key=api_key)
 
-    with st.status("⚙️ **NEXUS CORE ACTIVE**", expanded=True) as status:
-        # Step 1: Clone
-        st.write("📂 Cloning repository into unique workspace...")
-        cloned_path = clone_repository(repo_url)
-        
-        if cloned_path.startswith("Error:"):
-            st.error(cloned_path); st.stop()
+    temp_dir = None # Track for cleanup
+    
+    try:
+        with st.status("⚙️ **NEXUS CORE ACTIVE**", expanded=True) as status:
+            # Step 1: Clone into dynamic temp folder
+            st.write("📂 Cloning repository into unique workspace...")
+            temp_dir = tempfile.mkdtemp()
+            Repo.clone_from(repo_url, temp_dir)
+            cloned_path = os.path.abspath(temp_dir)
 
-        # Step 2: SAST
-        st.write(f"🔬 Analyzing source code in {cloned_path}...")
-        sast_results = scan_code_for_patterns(cloned_path)
-        
-        # Step 3: SCA (Manifest)
-        st.write("📡 Scanning dependencies...")
-        sca_data = nexus_agent_logic.scan_repo_manifest(repo_url)
-        
-        # Combine data for AI
-        scan_data = {"cloned_path": cloned_path, "sast": sast_results, "sca": sca_data}
-        
-        # AI Analysis
-        try:
+            # Step 2: SAST
+            st.write(f"🔬 Analyzing source code in {cloned_path}...")
+            sast_results = scan_code_for_patterns(cloned_path)
+            
+            # Step 3: SCA (Manifest)
+            st.write("📡 Scanning dependencies...")
+            sca_data = nexus_agent_logic.scan_repo_manifest(repo_url)
+            
+            # Combine data for AI
+            scan_data = {"cloned_path": cloned_path, "sast": sast_results, "sca": sca_data}
+            
+            # AI Analysis
             model = genai.GenerativeModel('gemini-1.5-flash')
             prompt = f"""
             Analyze this repository: {scan_data}
             MANDATORY PROTOCOL:
-            1. Use the absolute path provided in 'cloned_path'. Do not guess.
+            1. Use 'cloned_path' for all file references.
             2. Verbatim report all [CRITICAL] findings from 'sast'.
             3. Create a dark terminal 'Code Evidence' section in the HTML.
             Output a professional Tailwind CSS HTML report.
@@ -192,4 +183,12 @@ if scan_btn and repo_url:
             status.update(label="✅ AUDIT COMPLETE", state="complete", expanded=False)
             st.components.v1.html(report_html, height=800, scrolling=True)
             st.download_button("📥 Download Report", data=report_html, file_name="Nexus_Audit.html", mime="text/html")
-        except Exception as e: st.error(f"AI Failure: {e}")
+            
+    except Exception as e:
+        st.error(f"❌ Error during scan: {e}")
+    
+    finally:
+        # Step 4: Cleanup
+        if temp_dir and os.path.exists(temp_dir):
+            shutil.rmtree(temp_dir)
+            # st.write("🧹 Temporary workspace cleaned.") # Optional debug line
