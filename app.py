@@ -270,7 +270,15 @@ if scan_btn and repo_input:
         send_security_alert(alert_webhook, scan_data['repo_name'], crit_count)
         st.toast("Alert sent to team channel!", icon="⚠️")
 
-# Render Report
+# Render Report & Download Button
 if "current_report" in st.session_state:
+    # 1. The Download Button
+    st.download_button(
+        label="📥 Download HTML Report",
+        data=st.session_state.current_report,
+        file_name=f"Nexus_Audit_Report_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.html",
+        mime="text/html"
+    )
+    
+    # 2. The Visual Dashboard
     components.html(st.session_state.current_report, height=800, scrolling=True)
-
