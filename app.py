@@ -281,4 +281,51 @@ if "current_report" in st.session_state:
     )
     
     # 2. The Visual Dashboard
+   # --- 5. RENDER UI: REPORT OR LANDING PAGE ---
+if "current_report" in st.session_state:
+    # 1. The Download Button
+    st.download_button(
+        label="📥 Download HTML Report",
+        data=st.session_state.current_report,
+        file_name=f"Nexus_Audit_Report_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.html",
+        mime="text/html"
+    )
+    # 2. The Visual Dashboard
     components.html(st.session_state.current_report, height=800, scrolling=True)
+
+else:
+    # 3. The Empty State / Landing Page
+    st.markdown("""
+    <div style="text-align: center; margin-top: 40px; margin-bottom: 40px;">
+        <h1 style="font-size: 4rem; color: #f8fafc; margin-bottom: 0;">🛡️ NEXUS <span style="color: #3b82f6;">CORE</span></h1>
+        <p style="font-size: 1.2rem; color: #94a3b8; font-weight: 600;">Autonomous DevSecOps & AI Vulnerability Scanner</p>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    st.markdown("---")
+    
+    # Feature Columns
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        st.info("### 🎯 1. Target\nPaste a GitHub repository URL into the sidebar. Nexus will spin up a secure, temporary workspace and clone the source code.")
+    
+    with col2:
+        st.warning("### 🔬 2. Scan\nThe Nuclear Regex Engine and SCA APIs aggressively hunt for RCEs, injections, and exposed secrets in milliseconds.")
+        
+    with col3:
+        st.success("### 🧠 3. Remediate\nThe Gemini AI Engine analyzes the raw data to generate actionable proof-of-concepts and secure code fixes.")
+
+    st.markdown("---")
+    
+    # Instructions
+    st.markdown("### 🚀 How to use this Agent:")
+    st.markdown("""
+    1. **Open the Sidebar** (click the `>` arrow in the top left if it is closed).
+    2. **Enter a Repository URL** (e.g., `https://github.com/user/vulnerable-repo`).
+    3. *(Optional)* Add a **Slack/Discord Webhook URL** to receive instant alerts if critical vulnerabilities are found.
+    4. Click **Run Security Audit** to initiate the analysis.
+    
+    *Looking for previous scans? Select a report from the **Audit History** dropdown in the sidebar to load it instantly.*
+    """)
+
