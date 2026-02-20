@@ -281,15 +281,17 @@ if "current_report" in st.session_state:
     )
     
     # 2. The Visual Dashboard
-   # --- 5. RENDER UI: REPORT OR LANDING PAGE ---
+ # --- 5. RENDER UI: REPORT OR LANDING PAGE ---
 if "current_report" in st.session_state:
     # 1. The Download Button
     st.download_button(
         label="📥 Download HTML Report",
         data=st.session_state.current_report,
-        file_name=f"Nexus_Audit_Report_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.html",
-        mime="text/html"
+        file_name="Nexus_Audit_Report.html",
+        mime="text/html",
+        key="nexus_download_btn"  # <--- THIS IS THE MAGIC FIX
     )
+    
     # 2. The Visual Dashboard
     components.html(st.session_state.current_report, height=800, scrolling=True)
 
@@ -311,7 +313,7 @@ else:
         st.info("### 🎯 1. Target\nPaste a GitHub repository URL into the sidebar. Nexus will spin up a secure, temporary workspace and clone the source code.")
     
     with col2:
-        st.warning("### 🔬 2. Scan\nThe Nuclear Regex Engine and SCA APIs aggressively hunt for RCEs, injections, and exposed secrets in milliseconds.")
+        st.warning("### 🔬 2. Scan\nThe Regex Engine and SCA APIs aggressively hunt for RCEs, injections, and exposed secrets in milliseconds.")
         
     with col3:
         st.success("### 🧠 3. Remediate\nThe Gemini AI Engine analyzes the raw data to generate actionable proof-of-concepts and secure code fixes.")
@@ -328,4 +330,3 @@ else:
     
     *Looking for previous scans? Select a report from the **Audit History** dropdown in the sidebar to load it instantly.*
     """)
-
