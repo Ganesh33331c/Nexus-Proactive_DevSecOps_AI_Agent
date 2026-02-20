@@ -46,7 +46,54 @@ def send_security_alert(webhook_url, repo_name, critical_count):
     msg = f"🚨 *NEXUS ALERT* 🚨\n**Repo**: `{repo_name}`\n**Criticals**: {critical_count}\n⚠️ Action required."
     try: requests.post(webhook_url, json={"text": msg, "content": msg}, timeout=5)
     except: pass
+# --- 2.5 BLACK BOX SAST TOOLS ---
+def find_python_root(start_path):
+    """Recursively finds the first folder containing .py files."""
+    for dirpath, _, filenames in os.walk(start_path):
+        if any(f.endswith(".py") for f in filenames):
+            return dirpath
+    return start_path
 
+def scan_code_for_patterns(base_dir):
+    """Path-intelligent recursive Regex scan for RCE, Secrets, and Injection."""
+    actual_path = find_python_root(base_dir)
+    findings = [f"[DEBUG] Scanning directory: {actual_path}"]
+
+    patterns = {
+        r'yaml\.load\(': "RCE Risk (Unsafe Deserialization)",
+        r'pickle\.load\(': "RCE Risk (Unsafe Deserialization)",
+        r'eval\(': "Arbitrary Code Execution",
+        r'exec\(': "Arbitrary Code Execution",
+        r'os\.system\(': "Command Injection",
+        r'subprocess\.Popen.*shell=True': "Command Injection",
+        r'(?i)(api_key|secret_key|password|token)\s*=\s*[\'"][a-zA-Z0-9_\-]{16,}[\'"]': "Hardcoded Secret",
+        r'app\.run\(.*debug=True': "Flask Debug Enabled",
+        r'verify=False': "SSL Verification Disabled (MITM Risk)"
+    }
+
+    if not os.path.exists(actual_path):
+        return "[DEBUG] Directory not found."
+
+    for dirpath, _, filenames in os.walk(actual_path):
+        for filename in filenames:
+            filepath = os.path.join(dirpath, filename)
+            if filename.startswith('.') or filename.lower().endswith(('.png', '.jpg', '.pyc', '.exe')):
+                continue
+
+            try:
+                with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
+                    for i, line in enumerate(f):
+                        for pattern, risk in patterns.items():
+                            if re.search(pattern, line):
+                                clean_line = line.strip()[:100]
+                                rel_path = os.path.relpath(filepath, base_dir)
+                                findings.append(
+                                    f"[CRITICAL] Found '{risk}' in {rel_path} at line {i+1}: \"{clean_line}\""
+                                )
+            except Exception:
+                continue
+
+    return "\n".join(findings) if len(findings) > 1 else "SAFE: No critical patterns found."
 # --- 3. ENTERPRISE HTML TEMPLATE ---
 HTML_TEMPLATE = """
 <!DOCTYPE html>
@@ -198,4 +245,5 @@ if scan_btn and repo_input:
 # Render Report
 if "current_report" in st.session_state:
     components.html(st.session_state.current_report, height=800, scrolling=True)
+
 
