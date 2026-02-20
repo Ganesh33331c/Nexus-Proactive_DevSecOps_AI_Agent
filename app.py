@@ -7,6 +7,7 @@ import os
 import shutil
 import json
 import re
+import time  # <-- Added for the Retry Sleep logic
 from git import Repo
 import google.generativeai as genai
 from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime
@@ -15,12 +16,10 @@ from sqlalchemy.orm import declarative_base, sessionmaker
 import nexus_agent_logic 
 
 # --- 1. API KEY SETUP ---
-# (Make sure to configure Gemini here before calling the model)
 api_key = st.secrets.get("GEMINI_API_KEY")
 if api_key:
     genai.configure(api_key=api_key)
 
-# ... [The rest of your code starts here with Database Setup] ...
 # --- 1. DATABASE SETUP ---
 Base = declarative_base()
 class SecurityAudit(Base):
@@ -46,6 +45,7 @@ def send_security_alert(webhook_url, repo_name, critical_count):
     msg = f"🚨 *NEXUS ALERT* 🚨\n**Repo**: `{repo_name}`\n**Criticals**: {critical_count}\n⚠️ Action required."
     try: requests.post(webhook_url, json={"text": msg, "content": msg}, timeout=5)
     except: pass
+
 # --- 2.5 BLACK BOX SAST TOOLS ---
 def find_python_root(start_path):
     """Recursively finds the first folder containing .py files."""
@@ -94,6 +94,7 @@ def scan_code_for_patterns(base_dir):
                 continue
 
     return "\n".join(findings) if len(findings) > 1 else "SAFE: No critical patterns found."
+
 # --- 3. ENTERPRISE HTML TEMPLATE ---
 HTML_TEMPLATE = """
 <!DOCTYPE html>
@@ -170,7 +171,7 @@ with st.sidebar:
 if scan_btn and repo_input:
     with st.status("🛠️ Nexus Engine Active...", expanded=True) as status:
         
-       # ==========================================
+        # ==========================================
         # ### YOUR BLACK BOX LOGIC ###
         # ==========================================
         st.write("📂 Cloning repository for SAST...")
@@ -182,18 +183,26 @@ if scan_btn and repo_input:
         sast_results = scan_code_for_patterns(cloned_path)
         
         st.write("📡 Fetching manifest via GitHub API...")
-        # Call YOUR function from nexus_agent_logic.py
         raw_sca_json = nexus_agent_logic.scan_repo_manifest(repo_input)
         try:
             sca_results = json.loads(raw_sca_json)
         except json.JSONDecodeError:
             sca_results = {"error": "Failed to parse manifest."}
 
-        st.write("🧠 Nexus AI generating final report...")
+        st.write("🧠 Nexus AI preparing final report...")
         
-        # We prompt Gemini to analyze BOTH sets of data and output the exact JSON 
-        # structure that our Enterprise UI needs to render the cards.
-        model = genai.GenerativeModel('gemini-1.5-flash')
+        # --- NEW: DYNAMIC MODEL SELECTOR ---
+        st.write("🛡️ Locating compatible AI model...")
+        available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+        
+        if not available_models:
+            st.error("❌ No compatible text models found for this API key.")
+            st.stop()
+            
+        best_model_name = next((m for m in available_models if "flash" in m.lower()), available_models[0])
+        st.write(f"🤖 Selected Model: `{best_model_name}`")
+        model = genai.GenerativeModel(best_model_name)
+        
         prompt = f"""
         Analyze this security data for repository: {repo_input}
         SAST Data: {sast_results}
@@ -214,12 +223,30 @@ if scan_btn and repo_input:
         }}
         """
         
-        response = model.generate_content(prompt)
+        # --- NEW: SMART RETRY LOGIC ---
+        max_retries = 3
+        response = None
+        
+        for attempt in range(max_retries):
+            try:
+                response = model.generate_content(prompt)
+                break 
+            except Exception as e:
+                error_msg = str(e)
+                if "429" in error_msg and attempt < max_retries - 1:
+                    st.warning(f"⚠️ API Quota limit reached. Nexus is waiting 31 seconds to retry... (Attempt {attempt+1}/{max_retries})")
+                    time.sleep(31)
+                else:
+                    st.error(f"❌ AI Generation Failed: {error_msg}")
+                    st.stop()
         
         # Parse the AI's response into the dictionary our UI expects
         try:
-            clean_json = response.text.replace("```json", "").replace("```", "").strip()
-            scan_data = json.loads(clean_json)
+            if response and response.text:
+                clean_json = response.text.replace("```json", "").replace("```", "").strip()
+                scan_data = json.loads(clean_json)
+            else:
+                raise ValueError("Empty response from AI.")
         except Exception as e:
             st.error(f"AI Output Parsing Error: {e}")
             scan_data = {"repo_name": repo_input, "findings": []}
@@ -228,6 +255,7 @@ if scan_btn and repo_input:
         if temp_dir and os.path.exists(temp_dir):
             shutil.rmtree(temp_dir)
         # ==========================================
+        
         status.update(label="Audit Complete!", state="complete")
 
     # Generate HTML & Calculate Metrics
@@ -245,5 +273,3 @@ if scan_btn and repo_input:
 # Render Report
 if "current_report" in st.session_state:
     components.html(st.session_state.current_report, height=800, scrolling=True)
-
-
