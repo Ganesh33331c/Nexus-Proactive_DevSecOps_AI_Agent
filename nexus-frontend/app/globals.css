@@ -1,0 +1,301 @@
+@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;700;900&family=JetBrains+Mono:wght@300;400;500;600&family=Exo+2:wght@300;400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ─── CSS Variables ─────────────────────────────────────── */
+:root {
+  --cyan-neon: #00f5ff;
+  --cyan-glow: #06b6d4;
+  --violet-neon: #a855f7;
+  --void-900: #060d1a;
+  --void-800: #0a1628;
+  --glass-bg: rgba(10, 18, 35, 0.75);
+  --glass-border: rgba(0, 245, 255, 0.12);
+  --glass-border-hover: rgba(0, 245, 255, 0.3);
+  --panel-shadow: 0 25px 50px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(255, 255, 255, 0.04);
+}
+
+/* ─── Base Reset ─────────────────────────────────────────── */
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  overflow: hidden;
+  background-color: #020409;
+  color: #cbd5e1;
+  font-family: 'Exo 2', sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ─── Custom Scrollbars ──────────────────────────────────── */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: rgba(6, 13, 26, 0.5); }
+::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, var(--cyan-glow), var(--violet-neon));
+  border-radius: 2px;
+}
+::-webkit-scrollbar-thumb:hover { background: var(--cyan-neon); }
+* { scrollbar-width: thin; scrollbar-color: var(--cyan-glow) rgba(6, 13, 26, 0.5); }
+
+/* ─── Glassmorphism 2.0 ──────────────────────────────────── */
+.glass-panel {
+  background: var(--glass-bg);
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--panel-shadow), inset 0 1px 0 rgba(255,255,255,0.05);
+  transition: border-color 0.3s ease;
+}
+
+.glass-panel:hover {
+  border-color: var(--glass-border-hover);
+}
+
+.glass-card {
+  background: rgba(15, 23, 42, 0.5);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(0, 245, 255, 0.08);
+  border-radius: 12px;
+  transition: all 0.2s ease;
+}
+
+.glass-card:hover {
+  border-color: rgba(0, 245, 255, 0.2);
+  box-shadow: 0 0 20px rgba(0, 245, 255, 0.06);
+}
+
+/* ─── Neon Text ──────────────────────────────────────────── */
+.text-neon-cyan {
+  color: var(--cyan-neon);
+  text-shadow: 0 0 10px rgba(0, 245, 255, 0.5);
+}
+
+.text-neon-violet {
+  color: var(--violet-neon);
+  text-shadow: 0 0 10px rgba(168, 85, 247, 0.5);
+}
+
+.text-gradient-cyber {
+  background: linear-gradient(135deg, #00f5ff 0%, #3b82f6 50%, #a855f7 100%);
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  animation: text-shimmer 4s linear infinite;
+}
+
+@keyframes text-shimmer {
+  0% { background-position: 0% center; }
+  100% { background-position: 200% center; }
+}
+
+/* ─── Glow Button ────────────────────────────────────────── */
+.btn-cyber {
+  position: relative;
+  background: linear-gradient(135deg, rgba(0,245,255,0.1), rgba(168,85,247,0.1));
+  border: 1px solid rgba(0, 245, 255, 0.3);
+  color: var(--cyan-neon);
+  font-family: 'Orbitron', monospace;
+  font-size: 0.7rem;
+  letter-spacing: 0.1em;
+  padding: 0.6rem 1.4rem;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  overflow: hidden;
+}
+
+.btn-cyber::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, rgba(0,245,255,0.2), rgba(168,85,247,0.2));
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.btn-cyber:hover::before { opacity: 1; }
+.btn-cyber:hover {
+  box-shadow: 0 0 20px rgba(0, 245, 255, 0.3), 0 0 40px rgba(0, 245, 255, 0.1);
+  border-color: var(--cyan-neon);
+}
+
+.btn-send {
+  background: linear-gradient(135deg, rgba(0,245,255,0.15), rgba(168,85,247,0.15));
+  border: 1px solid rgba(0, 245, 255, 0.4);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  animation: pulse-send 2s ease-in-out infinite;
+}
+
+@keyframes pulse-send {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(0, 245, 255, 0); }
+  50% { box-shadow: 0 0 0 4px rgba(0, 245, 255, 0.1), 0 0 20px rgba(0, 245, 255, 0.15); }
+}
+
+.btn-send:hover {
+  background: linear-gradient(135deg, rgba(0,245,255,0.3), rgba(168,85,247,0.3));
+  box-shadow: 0 0 25px rgba(0, 245, 255, 0.5);
+  border-color: var(--cyan-neon);
+  animation: none;
+}
+
+/* ─── Cyber Grid Background ──────────────────────────────── */
+.cyber-grid-bg {
+  background-image:
+    linear-gradient(rgba(0,245,255,0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0,245,255,0.025) 1px, transparent 1px);
+  background-size: 40px 40px;
+}
+
+/* ─── Terminal Styles ────────────────────────────────────── */
+.terminal-window {
+  background: rgba(2, 4, 9, 0.95);
+  border: 1px solid rgba(0, 245, 255, 0.15);
+  border-radius: 10px;
+  font-family: 'JetBrains Mono', monospace;
+  overflow: hidden;
+}
+
+.terminal-header {
+  background: rgba(6, 13, 26, 0.9);
+  border-bottom: 1px solid rgba(0, 245, 255, 0.1);
+  padding: 10px 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.terminal-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+.terminal-output {
+  padding: 16px;
+  overflow-y: auto;
+  font-size: 0.75rem;
+  line-height: 1.8;
+}
+
+/* Terminal syntax coloring */
+.t-critical { color: #ff4757; }
+.t-warning  { color: #ffa502; }
+.t-success  { color: #2ed573; }
+.t-info     { color: var(--cyan-neon); }
+.t-debug    { color: #747d8c; }
+.t-prompt   { color: var(--violet-neon); }
+.t-path     { color: #a4b0be; }
+.t-string   { color: #eccc68; }
+.t-number   { color: #ff6b81; }
+.t-keyword  { color: #70a1ff; }
+
+/* ─── Scan Line Effect ───────────────────────────────────── */
+.scan-line-container {
+  position: relative;
+  overflow: hidden;
+}
+
+.scan-line-container::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, rgba(0,245,255,0.4), transparent);
+  animation: scan-line 4s linear infinite;
+  pointer-events: none;
+}
+
+@keyframes scan-line {
+  0%  { top: 0%; opacity: 0; }
+  5%  { opacity: 1; }
+  95% { opacity: 1; }
+  100% { top: 100%; opacity: 0; }
+}
+
+/* ─── Chat Message Bubbles ───────────────────────────────── */
+.msg-user {
+  background: linear-gradient(135deg, rgba(0,245,255,0.08), rgba(0,245,255,0.04));
+  border: 1px solid rgba(0, 245, 255, 0.15);
+  border-radius: 12px 12px 2px 12px;
+}
+
+.msg-nexus {
+  background: linear-gradient(135deg, rgba(168,85,247,0.08), rgba(168,85,247,0.04));
+  border: 1px solid rgba(168, 85, 247, 0.15);
+  border-radius: 12px 12px 12px 2px;
+}
+
+/* ─── Input field ────────────────────────────────────────── */
+.cyber-input {
+  background: rgba(6, 13, 26, 0.8);
+  border: 1px solid rgba(0, 245, 255, 0.2);
+  border-radius: 8px;
+  color: #e2e8f0;
+  font-family: 'Exo 2', sans-serif;
+  transition: all 0.2s ease;
+  outline: none;
+  width: 100%;
+}
+
+.cyber-input:focus {
+  border-color: rgba(0, 245, 255, 0.5);
+  box-shadow: 0 0 0 2px rgba(0, 245, 255, 0.08), 0 0 20px rgba(0, 245, 255, 0.1);
+}
+
+.cyber-input::placeholder { color: rgba(148, 163, 184, 0.4); }
+
+/* ─── Status Badges ──────────────────────────────────────── */
+.badge-online {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: 'Orbitron', monospace;
+  font-size: 0.6rem;
+  letter-spacing: 0.08em;
+  color: #2ed573;
+}
+
+.badge-online::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  background: #2ed573;
+  border-radius: 50%;
+  box-shadow: 0 0 6px #2ed573;
+  animation: blink 1.5s ease-in-out infinite;
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+/* ─── Dividers ───────────────────────────────────────────── */
+.cyber-divider {
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(0,245,255,0.3), rgba(168,85,247,0.3), transparent);
+}
+
+/* ─── Stat Cards ─────────────────────────────────────────── */
+.stat-card {
+  background: rgba(6, 13, 26, 0.6);
+  border: 1px solid rgba(0, 245, 255, 0.1);
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-family: 'Orbitron', monospace;
+  text-align: center;
+  transition: all 0.2s ease;
+}
+
+.stat-card:hover {
+  border-color: rgba(0, 245, 255, 0.3);
+  box-shadow: 0 0 15px rgba(0, 245, 255, 0.08);
+}
