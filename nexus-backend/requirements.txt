@@ -1,5 +1,7 @@
-streamlit
+fastapi
+uvicorn
+pydantic
+sqlalchemy
 google-generativeai
 GitPython
 requests
-SQLAlchemy
