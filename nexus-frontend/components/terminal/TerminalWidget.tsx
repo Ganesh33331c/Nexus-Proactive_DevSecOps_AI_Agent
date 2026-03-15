@@ -141,30 +141,59 @@ export default function TerminalWidget({ externalLines, isScanning = false }: Te
         }
       });
 
+     // --- PREMIUM HTML LAYOUT GENERATOR ---
       const cardsHtml = findings.map((f: any) => {
         const sev = (f.severity || "low").toLowerCase();
+        let badgeColor = "bg-green-500/20 text-green-400 border-green-500/30";
+        if (sev === "critical") badgeColor = "bg-red-500/20 text-red-400 border-red-500/30";
+        if (sev === "high") badgeColor = "bg-orange-500/20 text-orange-400 border-orange-500/30";
+        if (sev === "medium") badgeColor = "bg-yellow-500/20 text-yellow-400 border-yellow-500/30";
+
         return `
-        <div class="f-card glass p-6 rounded sev-${sev} mb-4" data-sev="${sev}">
-            <h3 class="text-xl font-bold text-white mb-2">${f.title || 'Unknown'} <span class="text-xs bg-slate-800 p-1 px-2 rounded uppercase align-middle ml-2">${sev}</span></h3>
-            <p class="text-sm text-slate-400 mb-4 leading-relaxed">${f.description || ''}</p>
-            <div class="bg-black/50 p-4 rounded mb-2 border border-white/5"><span class="text-xs text-pink-400 font-bold uppercase tracking-wider block mb-1">Proof of Concept</span> <code class="text-sm text-pink-200">${f.poc || ''}</code></div>
-            <div class="bg-black/50 p-4 rounded border border-emerald-500/10"><span class="text-xs text-emerald-400 font-bold uppercase tracking-wider block mb-1">Remediation</span> <code class="text-sm text-emerald-200">${f.fix || ''}</code></div>
+        <div class="f-card glass-panel p-8 mb-6 sev-${sev}" data-sev="${sev}">
+            <div class="flex justify-between items-start mb-4">
+                <h3 class="text-2xl font-bold text-white font-display tracking-wide">${f.title || 'Unknown Finding'}</h3>
+                <span class="badge border ${badgeColor}">${sev}</span>
+            </div>
+            <p class="text-base text-slate-300 mb-6 leading-relaxed">${f.description || ''}</p>
+            
+            <div class="grid grid-cols-1 gap-4">
+                <div class="glass-card p-5 border-l-2 border-l-pink-500/50">
+                    <span class="text-xs text-pink-400 font-mono font-bold uppercase tracking-widest block mb-2">Proof of Concept</span>
+                    <code class="text-sm text-pink-100 font-mono block whitespace-pre-wrap">${f.poc || 'N/A'}</code>
+                </div>
+                <div class="glass-card p-5 border-l-2 border-l-emerald-500/50">
+                    <span class="text-xs text-emerald-400 font-mono font-bold uppercase tracking-widest block mb-2">Remediation Guide</span>
+                    <code class="text-sm text-emerald-100 font-mono block whitespace-pre-wrap">${f.fix || 'N/A'}</code>
+                </div>
+            </div>
         </div>`;
       }).join("");
 
       const htmlString = `<!DOCTYPE html>
       <html lang="en">
       <head>
-          <title>Nexus Audit Report</title>
+          <meta charset="UTF-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <title>Nexus Security Audit: ${data.repo_name}</title>
           <script src="https://cdn.tailwindcss.com"></script>
+          <link href="https://fonts.googleapis.com/css2?family=Exo+2:wght@300;400;600;700&family=JetBrains+Mono:wght@400;700&family=Orbitron:wght@500;700;900&display=swap" rel="stylesheet">
           <style>
-              body { background-color: #0f172a; color: #cbd5e1; font-family: sans-serif; }
-              .glass { background: rgba(30, 41, 59, 0.7); border: 1px solid rgba(255,255,255,0.1); }
-              .sev-critical { border-left: 4px solid #ef4444; }
-              .sev-high { border-left: 4px solid #f97316; }
-              .sev-medium { border-left: 4px solid #eab308; }
-              .sev-low { border-left: 4px solid #10b981; }
-              .hidden { display: none; }
+              body { background-color: #020409; color: #cbd5e1; font-family: 'Exo 2', sans-serif; }
+              h1, h2, h3, .font-display { font-family: 'Orbitron', sans-serif; }
+              code, pre, .font-mono { font-family: 'JetBrains Mono', monospace; }
+              
+              .glass-panel { background: rgba(10, 18, 35, 0.75); backdrop-filter: blur(12px); border: 1px solid rgba(0, 245, 255, 0.1); border-radius: 12px; }
+              .glass-card { background: rgba(15, 23, 42, 0.5); backdrop-filter: blur(8px); border: 1px solid rgba(255, 255, 255, 0.05); border-radius: 8px; }
+              
+              .sev-critical { border-left: 4px solid #ff4757; box-shadow: -4px 0 15px -5px rgba(255, 71, 87, 0.3); }
+              .sev-high { border-left: 4px solid #ffa502; box-shadow: -4px 0 15px -5px rgba(255, 165, 2, 0.3); }
+              .sev-medium { border-left: 4px solid #eccc68; box-shadow: -4px 0 15px -5px rgba(236, 204, 104, 0.3); }
+              .sev-low { border-left: 4px solid #2ed573; box-shadow: -4px 0 15px -5px rgba(46, 213, 115, 0.3); }
+              
+              .text-neon-cyan { color: #00f5ff; text-shadow: 0 0 10px rgba(0, 245, 255, 0.5); }
+              .badge { display: inline-block; padding: 0.25rem 0.75rem; border-radius: 9999px; font-size: 0.7rem; font-weight: bold; text-transform: uppercase; letter-spacing: 0.05em; }
+              .hidden { display: none !important; }
           </style>
           <script>
               function filterSev(level) {
@@ -174,20 +203,58 @@ export default function TerminalWidget({ externalLines, isScanning = false }: Te
               }
           </script>
       </head>
-      <body class="p-8"><div class="max-w-5xl mx-auto">
-          <h1 class="text-3xl font-bold text-white mb-8">NEXUS <span class="text-blue-500">AUDIT</span>: ${data.repo_name}</h1>
-          <div class="flex gap-2 mb-8">
-              <button onclick="filterSev('all')" class="px-4 py-2 bg-slate-800 text-white rounded">ALL</button>
-              <button onclick="filterSev('critical')" class="px-4 py-2 bg-red-900/50 text-red-400 rounded">CRITICAL</button>
+      <body class="p-8 antialiased">
+          <div class="max-w-6xl mx-auto">
+              <div class="glass-panel p-8 mb-8 flex justify-between items-center border-b-4 border-b-[#00f5ff]">
+                  <div>
+                      <h1 class="text-4xl font-black text-white tracking-wider mb-2">NEXUS <span class="text-neon-cyan">CORE</span></h1>
+                      <p class="text-sm text-slate-400 font-mono tracking-widest uppercase">Automated Vulnerability Intelligence Report</p>
+                  </div>
+                  <div class="text-right">
+                      <p class="text-xs text-slate-500 font-mono mb-1">TARGET REPOSITORY</p>
+                      <p class="text-lg font-bold text-white bg-slate-800/50 px-4 py-2 rounded border border-slate-700 font-mono">${data.repo_name}</p>
+                  </div>
+              </div>
+
+              <div class="flex gap-3 mb-6 font-mono text-sm">
+                  <button onclick="filterSev('all')" class="px-5 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded transition border border-slate-600">ALL</button>
+                  <button onclick="filterSev('critical')" class="px-5 py-2 bg-red-900/30 hover:bg-red-900/50 text-red-400 rounded transition border border-red-900/50">CRITICAL</button>
+                  <button onclick="filterSev('high')" class="px-5 py-2 bg-orange-900/30 hover:bg-orange-900/50 text-orange-400 rounded transition border border-orange-900/50">HIGH</button>
+                  <button onclick="filterSev('medium')" class="px-5 py-2 bg-yellow-900/30 hover:bg-yellow-900/50 text-yellow-400 rounded transition border border-yellow-900/50">MEDIUM</button>
+              </div>
+
+              <div class="grid grid-cols-4 gap-6 mb-10">
+                  <div class="glass-panel p-6 text-center border-t-2 border-t-[#ff4757]">
+                      <div class="text-[#ff4757] font-mono text-xs font-bold uppercase tracking-widest mb-2">Critical</div>
+                      <div class="text-5xl font-display font-bold text-white">${counts.critical}</div>
+                  </div>
+                  <div class="glass-panel p-6 text-center border-t-2 border-t-[#ffa502]">
+                      <div class="text-[#ffa502] font-mono text-xs font-bold uppercase tracking-widest mb-2">High</div>
+                      <div class="text-5xl font-display font-bold text-white">${counts.high}</div>
+                  </div>
+                  <div class="glass-panel p-6 text-center border-t-2 border-t-[#eccc68]">
+                      <div class="text-[#eccc68] font-mono text-xs font-bold uppercase tracking-widest mb-2">Medium</div>
+                      <div class="text-5xl font-display font-bold text-white">${counts.medium}</div>
+                  </div>
+                  <div class="glass-panel p-6 text-center border-t-2 border-t-[#2ed573]">
+                      <div class="text-[#2ed573] font-mono text-xs font-bold uppercase tracking-widest mb-2">Low</div>
+                      <div class="text-5xl font-display font-bold text-white">${counts.low}</div>
+                  </div>
+              </div>
+
+              <h2 class="text-2xl font-display font-bold text-white mb-6 flex items-center gap-3">
+                  <span class="text-neon-cyan">/</span> DETAILED FINDINGS
+              </h2>
+              <div class="space-y-6">
+                  ${cardsHtml}
+              </div>
+              
+              <div class="mt-12 text-center text-xs text-slate-600 font-mono">
+                  Generated autonomously by Nexus DevSecOps Agent • ${new Date().toUTCString()}
+              </div>
           </div>
-          <div class="grid grid-cols-4 gap-4 mb-8">
-              <div class="glass p-4 rounded text-center"><div class="text-red-500 text-xs font-bold uppercase">Critical</div><div class="text-3xl font-bold text-white mt-1">${counts.critical}</div></div>
-              <div class="glass p-4 rounded text-center"><div class="text-orange-500 text-xs font-bold uppercase">High</div><div class="text-3xl font-bold text-white mt-1">${counts.high}</div></div>
-              <div class="glass p-4 rounded text-center"><div class="text-yellow-500 text-xs font-bold uppercase">Medium</div><div class="text-3xl font-bold text-white mt-1">${counts.medium}</div></div>
-              <div class="glass p-4 rounded text-center"><div class="text-emerald-500 text-xs font-bold uppercase">Low</div><div class="text-3xl font-bold text-white mt-1">${counts.low}</div></div>
-          </div>
-          <div class="space-y-4">${cardsHtml}</div>
-      </div></body></html>`;
+      </body>
+      </html>`;
 
       const blob = new Blob([htmlString], { type: "text/html" });
       const url = URL.createObjectURL(blob);
