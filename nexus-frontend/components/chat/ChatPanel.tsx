@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Send, Shield, User, Cpu, RotateCcw } from "lucide-react";
 import { streamChat, ChatMessage } from "@/lib/api";
 import TemporalLoader from "./TemporalLoader";
+import ReactMarkdown from "react-markdown";
 
 const WELCOME: ChatMessage = {
   role: "assistant",
@@ -192,7 +193,9 @@ export default function ChatPanel() {
                   wordBreak: "break-word",
                 }}
               >
-                {msg.content}
+                <div className="prose-sm max-w-none">
+  <ReactMarkdown>{msg.content}</ReactMarkdown>
+</div>
                 {/* Streaming cursor on last assistant message */}
                 {msg.role === "assistant" &&
                   i === messages.length - 1 &&
