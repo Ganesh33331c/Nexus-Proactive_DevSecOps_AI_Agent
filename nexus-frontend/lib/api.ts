@@ -88,7 +88,7 @@ export function streamChat(
               onDone();
               return;
             }
-            if (payload) onChunk(payload);
+           if (payload) onChunk(payload.replace(/\\n/g, "\n"));
           }
         }
       }
