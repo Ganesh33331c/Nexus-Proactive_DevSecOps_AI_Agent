@@ -125,7 +125,7 @@ export default function TerminalWidget({ externalLines, isScanning = false }: Te
     URL.revokeObjectURL(url);
   };
 
-  // ─── DYNAMIC HTML REPORT GENERATOR ───
+  // ─── PREMIUM HTML REPORT GENERATOR ───
   const downloadHtmlReport = async () => {
     if (!auditId) return;
     try {
@@ -141,70 +141,59 @@ export default function TerminalWidget({ externalLines, isScanning = false }: Te
         }
       });
 
-      // --- PREMIUM HTML LAYOUT GENERATOR ---
       const cardsHtml = findings.map((f: any) => {
         const sev = (f.severity || "low").toLowerCase();
         
-        let sevColor = "";
-        let glowColor = "";
-        let badgeStyle = "";
+        // Semantic color mapping for UI elements
+        let badgeStyle = "bg-green-100 text-green-800 border-green-200";
+        let cardBorder = "border-l-[6px] border-l-green-500";
+        let iconColor = "text-green-500";
         
         if (sev === "critical") {
-            sevColor = "text-rose-500";
-            glowColor = "shadow-[0_0_15px_rgba(244,63,94,0.15)]";
-            badgeStyle = "bg-rose-500/10 text-rose-400 border-rose-500/20";
+          badgeStyle = "bg-red-100 text-red-800 border-red-200";
+          cardBorder = "border-l-[6px] border-l-red-600";
+          iconColor = "text-red-600";
         } else if (sev === "high") {
-            sevColor = "text-amber-500";
-            glowColor = "shadow-[0_0_15px_rgba(245,158,11,0.15)]";
-            badgeStyle = "bg-amber-500/10 text-amber-400 border-amber-500/20";
+          badgeStyle = "bg-orange-100 text-orange-800 border-orange-200";
+          cardBorder = "border-l-[6px] border-l-orange-500";
+          iconColor = "text-orange-500";
         } else if (sev === "medium") {
-            sevColor = "text-yellow-400";
-            glowColor = "shadow-[0_0_15px_rgba(250,204,21,0.15)]";
-            badgeStyle = "bg-yellow-400/10 text-yellow-300 border-yellow-400/20";
-        } else {
-            sevColor = "text-emerald-400";
-            glowColor = "shadow-[0_0_15px_rgba(52,211,153,0.15)]";
-            badgeStyle = "bg-emerald-500/10 text-emerald-400 border-emerald-500/20";
+          badgeStyle = "bg-yellow-100 text-yellow-800 border-yellow-200";
+          cardBorder = "border-l-[6px] border-l-yellow-400";
+          iconColor = "text-yellow-500";
         }
 
         return `
-        <div class="f-card w-full mb-8 relative rounded-xl border border-slate-700/50 bg-slate-800/40 backdrop-blur-md overflow-hidden ${glowColor} transition-all duration-300 hover:border-slate-600" data-sev="${sev}">
-            <div class="h-1 w-full ${sev === 'critical' ? 'bg-rose-500' : sev === 'high' ? 'bg-amber-500' : sev === 'medium' ? 'bg-yellow-400' : 'bg-emerald-500'}"></div>
-            
-            <div class="p-8">
-                <div class="flex justify-between items-start mb-6">
-                    <h3 class="text-2xl font-bold text-slate-100 font-display tracking-wide">${f.title || 'Unknown Finding'}</h3>
-                    <span class="px-3 py-1 rounded-full text-xs font-bold uppercase tracking-widest border ${badgeStyle}">${sev}</span>
+        <div class="f-card bg-white rounded-xl shadow-sm border border-slate-200 ${cardBorder} overflow-hidden mb-6 transition-all hover:shadow-md" data-sev="${sev}">
+            <div class="p-6 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
+                <div class="flex items-center gap-3">
+                    <svg class="w-6 h-6 ${iconColor}" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+                    <h3 class="text-xl font-bold text-slate-800 m-0">${f.title || 'Unknown Finding'}</h3>
                 </div>
-                
-                <p class="text-base text-slate-300 mb-8 leading-relaxed font-body">${f.description || ''}</p>
+                <span class="px-3 py-1 text-xs font-bold uppercase tracking-wider rounded-full border ${badgeStyle}">${sev}</span>
+            </div>
+            
+            <div class="p-6">
+                <p class="text-slate-600 text-sm leading-relaxed mb-6">${f.description || 'No description provided.'}</p>
                 
                 <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    <div class="rounded-lg border border-slate-700/80 bg-[#0d1117] overflow-hidden">
-                        <div class="flex items-center px-4 py-2 bg-slate-800/80 border-b border-slate-700">
-                            <div class="flex space-x-2 mr-4">
-                                <div class="w-3 h-3 rounded-full bg-rose-500/80"></div>
-                                <div class="w-3 h-3 rounded-full bg-amber-500/80"></div>
-                                <div class="w-3 h-3 rounded-full bg-emerald-500/80"></div>
-                            </div>
-                            <span class="text-xs text-slate-400 font-mono font-semibold uppercase tracking-widest">Proof of Concept</span>
+                    <div class="bg-slate-900 rounded-lg overflow-hidden flex flex-col">
+                        <div class="bg-slate-800 px-4 py-2 flex items-center gap-2 border-b border-slate-700">
+                            <div class="w-3 h-3 rounded-full bg-red-500"></div>
+                            <span class="text-xs text-slate-300 font-mono uppercase tracking-wider">Proof of Concept</span>
                         </div>
-                        <div class="p-4 overflow-x-auto">
-                            <code class="text-sm text-rose-200/90 font-mono block whitespace-pre-wrap">${f.poc || 'N/A'}</code>
+                        <div class="p-4 overflow-x-auto flex-1">
+                            <code class="text-sm text-pink-400 font-mono whitespace-pre-wrap">${f.poc || 'N/A'}</code>
                         </div>
                     </div>
                     
-                    <div class="rounded-lg border border-emerald-900/30 bg-[#0d1117] overflow-hidden">
-                        <div class="flex items-center px-4 py-2 bg-emerald-950/20 border-b border-emerald-900/30">
-                            <div class="flex space-x-2 mr-4">
-                                <div class="w-3 h-3 rounded-full bg-slate-600/50"></div>
-                                <div class="w-3 h-3 rounded-full bg-slate-600/50"></div>
-                                <div class="w-3 h-3 rounded-full bg-slate-600/50"></div>
-                            </div>
-                            <span class="text-xs text-emerald-400 font-mono font-semibold uppercase tracking-widest">Remediation Guide</span>
+                    <div class="bg-slate-900 rounded-lg overflow-hidden flex flex-col">
+                        <div class="bg-slate-800 px-4 py-2 flex items-center gap-2 border-b border-slate-700">
+                            <div class="w-3 h-3 rounded-full bg-green-500"></div>
+                            <span class="text-xs text-slate-300 font-mono uppercase tracking-wider">Remediation Guide</span>
                         </div>
-                        <div class="p-4 overflow-x-auto">
-                            <code class="text-sm text-emerald-200/90 font-mono block whitespace-pre-wrap">${f.fix || 'N/A'}</code>
+                        <div class="p-4 overflow-x-auto flex-1">
+                            <code class="text-sm text-emerald-400 font-mono whitespace-pre-wrap">${f.fix || 'N/A'}</code>
                         </div>
                     </div>
                 </div>
@@ -217,190 +206,140 @@ export default function TerminalWidget({ externalLines, isScanning = false }: Te
       <head>
           <meta charset="UTF-8">
           <meta name="viewport" content="width=device-width, initial-scale=1.0">
-          <title>Nexus Security Audit | ${data.repo_name}</title>
+          <title>Nexus Security Audit: ${data.repo_name}</title>
           <script src="https://cdn.tailwindcss.com"></script>
           <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-          <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500;700&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
+          <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
           <style>
-              body { 
-                  background-color: #020617; 
-                  background-image: radial-gradient(circle at 50% 0%, #1e1b4b 0%, #020617 70%);
-                  background-attachment: fixed;
-                  color: #e2e8f0; 
-                  font-family: 'Inter', sans-serif; 
-              }
-              .font-display { font-family: 'Space Grotesk', sans-serif; }
+              body { font-family: 'Inter', sans-serif; background-color: #f8fafc; color: #334155; }
               .font-mono { font-family: 'JetBrains Mono', monospace; }
-              .font-body { font-family: 'Inter', sans-serif; }
-              
-              /* Custom Scrollbar for Code Blocks */
-              ::-webkit-scrollbar { height: 8px; width: 8px; }
-              ::-webkit-scrollbar-track { background: #0f172a; border-radius: 4px; }
-              ::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
-              ::-webkit-scrollbar-thumb:hover { background: #475569; }
-
-              .glass-header { 
-                  background: rgba(15, 23, 42, 0.6); 
-                  backdrop-filter: blur(16px); 
-                  border-bottom: 1px solid rgba(255, 255, 255, 0.05); 
+              .bg-grid-pattern {
+                  background-image: linear-gradient(to right, #e2e8f0 1px, transparent 1px), linear-gradient(to bottom, #e2e8f0 1px, transparent 1px);
+                  background-size: 24px 24px;
               }
-              
-              .filter-btn { transition: all 0.2s; }
-              .filter-btn.active { background: rgba(56, 189, 248, 0.1); border-color: rgba(56, 189, 248, 0.3); color: #38bdf8; }
-              .hidden { display: none !important; }
+              .hidden-card { display: none !important; }
           </style>
-      </head>
-      <body class="antialiased min-h-screen pb-20">
-          
-          <div class="glass-header sticky top-0 z-50 px-8 py-4 mb-10 shadow-lg">
-              <div class="max-w-7xl mx-auto flex justify-between items-center">
-                  <div class="flex items-center gap-3">
-                      <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-cyan-400 to-blue-600 flex items-center justify-center shadow-[0_0_15px_rgba(34,211,238,0.4)]">
-                          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-                      </div>
-                      <h1 class="text-xl font-bold text-white font-display tracking-wide">NEXUS <span class="text-cyan-400">CORE</span></h1>
-                  </div>
-                  <div class="text-right flex items-center gap-4">
-                      <div class="hidden sm:block text-right mr-4 border-r border-slate-700 pr-4">
-                          <p class="text-[10px] text-slate-400 font-mono tracking-widest uppercase mb-1">Generated</p>
-                          <p class="text-xs text-slate-200 font-mono">${new Date().toUTCString()}</p>
-                      </div>
-                      <div class="bg-slate-800/80 border border-slate-600 rounded-md px-4 py-2 flex items-center gap-2">
-                          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 22v-4a4.8 4.8 0 0 0-1-3.5c3 0 6-2 6-5.5.08-1.25-.27-2.48-1-3.5.28-1.15.28-2.35 0-3.5 0 0-1 0-3 1.5-2.64-.5-5.36-.5-8 0C6 2 5 2 5 2c-.3 1.15-.3 2.35 0 3.5A5.403 5.403 0 0 0 4 9c0 3.5 3 5.5 6 5.5-.39.49-.68 1.05-.85 1.65-.17.6-.22 1.23-.15 1.85v4"/><path d="M9 18c-4.51 2-5-2-7-2"/></svg>
-                          <span class="text-sm font-bold text-white font-mono">${data.repo_name}</span>
-                      </div>
-                  </div>
-              </div>
-          </div>
-
-          <div class="max-w-7xl mx-auto px-8">
-              
-              <div class="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-12">
-                  
-                  <div class="lg:col-span-1 rounded-xl border border-slate-700/50 bg-slate-800/40 backdrop-blur-md p-6 flex flex-col items-center justify-center">
-                      <h2 class="text-sm text-slate-400 font-mono uppercase tracking-widest mb-4 w-full text-left">Threat Distribution</h2>
-                      <div class="relative w-48 h-48">
-                          <canvas id="severityChart"></canvas>
-                          <div class="absolute inset-0 flex items-center justify-center flex-col">
-                              <span class="text-3xl font-bold font-display text-white">${findings.length}</span>
-                              <span class="text-[10px] text-slate-400 font-mono uppercase tracking-widest">Total</span>
-                          </div>
-                      </div>
-                  </div>
-
-                  <div class="lg:col-span-2 grid grid-cols-2 gap-4">
-                      <div class="rounded-xl border border-rose-900/30 bg-rose-950/10 p-6 flex flex-col justify-center relative overflow-hidden group">
-                          <div class="absolute -right-4 -top-4 w-24 h-24 bg-rose-500/5 rounded-full blur-xl group-hover:bg-rose-500/10 transition-all"></div>
-                          <div class="text-rose-500 font-mono text-xs font-bold uppercase tracking-widest mb-2 flex items-center gap-2">
-                              <div class="w-2 h-2 rounded-full bg-rose-500 animate-pulse"></div> Critical Risk
-                          </div>
-                          <div class="text-6xl font-display font-bold text-white">${counts.critical}</div>
-                      </div>
-                      
-                      <div class="rounded-xl border border-amber-900/30 bg-amber-950/10 p-6 flex flex-col justify-center relative overflow-hidden group">
-                          <div class="absolute -right-4 -top-4 w-24 h-24 bg-amber-500/5 rounded-full blur-xl group-hover:bg-amber-500/10 transition-all"></div>
-                          <div class="text-amber-500 font-mono text-xs font-bold uppercase tracking-widest mb-2 flex items-center gap-2">
-                              <div class="w-2 h-2 rounded-full bg-amber-500"></div> High Risk
-                          </div>
-                          <div class="text-6xl font-display font-bold text-white">${counts.high}</div>
-                      </div>
-                      
-                      <div class="rounded-xl border border-yellow-900/30 bg-yellow-950/10 p-6 flex flex-col justify-center relative overflow-hidden group">
-                          <div class="absolute -right-4 -top-4 w-24 h-24 bg-yellow-400/5 rounded-full blur-xl group-hover:bg-yellow-400/10 transition-all"></div>
-                          <div class="text-yellow-400 font-mono text-xs font-bold uppercase tracking-widest mb-2 flex items-center gap-2">
-                              <div class="w-2 h-2 rounded-full bg-yellow-400"></div> Medium Risk
-                          </div>
-                          <div class="text-6xl font-display font-bold text-white">${counts.medium}</div>
-                      </div>
-                      
-                      <div class="rounded-xl border border-emerald-900/30 bg-emerald-950/10 p-6 flex flex-col justify-center relative overflow-hidden group">
-                          <div class="absolute -right-4 -top-4 w-24 h-24 bg-emerald-500/5 rounded-full blur-xl group-hover:bg-emerald-500/10 transition-all"></div>
-                          <div class="text-emerald-400 font-mono text-xs font-bold uppercase tracking-widest mb-2 flex items-center gap-2">
-                              <div class="w-2 h-2 rounded-full bg-emerald-500"></div> Low Risk
-                          </div>
-                          <div class="text-6xl font-display font-bold text-white">${counts.low}</div>
-                      </div>
-                  </div>
-              </div>
-
-              <div class="flex flex-col md:flex-row gap-8 items-end mb-8 border-b border-slate-800 pb-4">
-                  <h2 class="text-2xl font-display font-bold text-white flex items-center gap-3">
-                      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>
-                      Vulnerability Assessment
-                  </h2>
-                  
-                  <div class="flex bg-slate-800/50 p-1 rounded-lg border border-slate-700/50 font-mono text-xs ml-auto overflow-x-auto">
-                      <button onclick="filterSev('all', this)" class="filter-btn active px-4 py-2 rounded-md text-slate-300 hover:text-white font-semibold">ALL</button>
-                      <button onclick="filterSev('critical', this)" class="filter-btn px-4 py-2 rounded-md text-slate-400 hover:text-rose-400 font-semibold">CRITICAL</button>
-                      <button onclick="filterSev('high', this)" class="filter-btn px-4 py-2 rounded-md text-slate-400 hover:text-amber-400 font-semibold">HIGH</button>
-                      <button onclick="filterSev('medium', this)" class="filter-btn px-4 py-2 rounded-md text-slate-400 hover:text-yellow-400 font-semibold">MEDIUM</button>
-                      <button onclick="filterSev('low', this)" class="filter-btn px-4 py-2 rounded-md text-slate-400 hover:text-emerald-400 font-semibold">LOW</button>
-                  </div>
-              </div>
-
-              <div class="space-y-6">
-                  ${cardsHtml}
-              </div>
-              
-          </div>
-
           <script>
-              // Filter Logic
               function filterSev(level, btnElement) {
-                  // Update cards
+                  // Toggle cards
                   document.querySelectorAll('.f-card').forEach(c => {
                       if (level === 'all') {
-                          c.classList.remove('hidden');
+                          c.classList.remove('hidden-card');
                       } else {
-                          c.classList.toggle('hidden', c.dataset.sev !== level);
+                          c.classList.toggle('hidden-card', c.dataset.sev !== level);
                       }
                   });
                   
-                  // Update active button state
-                  document.querySelectorAll('.filter-btn').forEach(btn => {
-                      btn.classList.remove('active');
+                  // Update active button styling
+                  document.querySelectorAll('.filter-btn').forEach(b => {
+                      b.classList.remove('ring-2', 'ring-offset-2', 'ring-slate-400');
                   });
-                  btnElement.classList.add('active');
+                  btnElement.classList.add('ring-2', 'ring-offset-2', 'ring-slate-400');
               }
+          </script>
+      </head>
+      <body class="antialiased min-h-screen pb-12">
+          
+          <div class="bg-slate-900 text-white w-full py-4 px-8 shadow-md">
+              <div class="max-w-7xl mx-auto flex justify-between items-center">
+                  <div class="flex items-center gap-3">
+                      <div class="w-8 h-8 rounded bg-gradient-to-br from-blue-500 to-cyan-400 flex items-center justify-center font-bold text-white shadow-lg shadow-cyan-500/30">N</div>
+                      <h1 class="text-xl font-bold tracking-tight">NEXUS <span class="text-cyan-400 font-normal">DevSecOps Engine</span></h1>
+                  </div>
+                  <div class="text-right flex items-center gap-4">
+                      <div class="text-sm text-slate-400 border-r border-slate-700 pr-4">
+                          Generated: <span class="text-white font-mono">${new Date().toLocaleString()}</span>
+                      </div>
+                      <div class="text-sm font-medium bg-slate-800 px-3 py-1 rounded border border-slate-700">
+                          CONFIDENTIAL
+                      </div>
+                  </div>
+              </div>
+          </div>
 
-              // Chart Initialization
+          <div class="max-w-7xl mx-auto px-8 mt-10">
+              
+              <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-8 mb-10 bg-grid-pattern relative overflow-hidden">
+                  <div class="absolute inset-0 bg-white/80 backdrop-blur-[2px]"></div>
+                  
+                  <div class="relative z-10 flex flex-col md:flex-row gap-8 items-center">
+                      <div class="flex-1">
+                          <h2 class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Target Repository</h2>
+                          <p class="text-3xl font-bold text-slate-800 mb-6 font-mono">${data.repo_name}</p>
+                          <p class="text-slate-600 mb-6 max-w-xl">
+                              This executive report details the security vulnerabilities discovered during the automated static and software composition analysis. Vulnerabilities are categorized by severity based on potential business impact.
+                          </p>
+                          
+                          <div class="flex gap-2">
+                              <button onclick="filterSev('all', this)" class="filter-btn ring-2 ring-offset-2 ring-slate-400 px-6 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-semibold rounded-lg transition-all border border-slate-300 shadow-sm">All Findings</button>
+                              <button onclick="filterSev('critical', this)" class="filter-btn px-6 py-2 bg-red-50 hover:bg-red-100 text-red-700 text-sm font-semibold rounded-lg transition-all border border-red-200 shadow-sm">Critical</button>
+                              <button onclick="filterSev('high', this)" class="filter-btn px-6 py-2 bg-orange-50 hover:bg-orange-100 text-orange-700 text-sm font-semibold rounded-lg transition-all border border-orange-200 shadow-sm">High</button>
+                          </div>
+                      </div>
+                      
+                      <div class="w-full md:w-auto bg-slate-50 p-6 rounded-xl border border-slate-200 shadow-inner flex items-center gap-8">
+                          <div class="w-40 h-40">
+                              <canvas id="severityChart"></canvas>
+                          </div>
+                          <div class="flex flex-col gap-3 min-w-[120px]">
+                              <div class="flex justify-between items-center"><span class="text-sm font-medium text-slate-600 flex items-center gap-2"><div class="w-2 h-2 rounded-full bg-red-600"></div>Critical</span> <span class="font-bold text-slate-800">${counts.critical}</span></div>
+                              <div class="flex justify-between items-center"><span class="text-sm font-medium text-slate-600 flex items-center gap-2"><div class="w-2 h-2 rounded-full bg-orange-500"></div>High</span> <span class="font-bold text-slate-800">${counts.high}</span></div>
+                              <div class="flex justify-between items-center"><span class="text-sm font-medium text-slate-600 flex items-center gap-2"><div class="w-2 h-2 rounded-full bg-yellow-400"></div>Medium</span> <span class="font-bold text-slate-800">${counts.medium}</span></div>
+                              <div class="flex justify-between items-center"><span class="text-sm font-medium text-slate-600 flex items-center gap-2"><div class="w-2 h-2 rounded-full bg-green-500"></div>Low</span> <span class="font-bold text-slate-800">${counts.low}</span></div>
+                          </div>
+                      </div>
+                  </div>
+              </div>
+
+              <h2 class="text-xl font-bold text-slate-800 mb-6 flex items-center gap-2">
+                  <svg class="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"></path></svg>
+                  Detailed Vulnerability Breakdown
+              </h2>
+              
+              <div class="space-y-2">
+                  ${cardsHtml}
+              </div>
+              
+              <div class="mt-16 pt-8 border-t border-slate-200 text-center text-sm text-slate-500">
+                  <p>Automated security intelligence provided by the <strong>Nexus Core System</strong>.</p>
+                  <p class="mt-1 opacity-70">Strictly confidential. Unauthorized distribution is prohibited.</p>
+              </div>
+          </div>
+
+          <script>
               document.addEventListener('DOMContentLoaded', function() {
-                  const ctx = document.getElementById('severityChart').getContext('2d');
-                  
-                  // Handle empty state
-                  const data = [${counts.critical}, ${counts.high}, ${counts.medium}, ${counts.low}];
-                  const sum = data.reduce((a, b) => a + b, 0);
-                  
+                  const ctx = document.getElementById('severityChart');
                   new Chart(ctx, {
                       type: 'doughnut',
                       data: {
                           labels: ['Critical', 'High', 'Medium', 'Low'],
                           datasets: [{
-                              data: sum === 0 ? [0,0,0,1] : data,
-                              backgroundColor: sum === 0 
-                                  ? ['#1e293b', '#1e293b', '#1e293b', '#1e293b'] 
-                                  : ['#f43f5e', '#f59e0b', '#facc15', '#10b981'],
+                              data: [${counts.critical}, ${counts.high}, ${counts.medium}, ${counts.low}],
+                              backgroundColor: [
+                                  '#dc2626', // red-600
+                                  '#f97316', // orange-500
+                                  '#facc15', // yellow-400
+                                  '#22c55e'  // green-500
+                              ],
                               borderWidth: 0,
                               hoverOffset: 4
                           }]
                       },
                       options: {
                           responsive: true,
-                          maintainAspectRatio: false,
                           cutout: '75%',
                           plugins: {
-                              legend: { display: false },
+                              legend: {
+                                  display: false // We built a custom legend next to it
+                              },
                               tooltip: {
-                                  enabled: sum > 0,
-                                  backgroundColor: 'rgba(15, 23, 42, 0.9)',
-                                  titleFont: { family: 'JetBrains Mono', size: 11 },
-                                  bodyFont: { family: 'Inter', size: 13 },
-                                  padding: 12,
-                                  borderColor: 'rgba(255,255,255,0.1)',
-                                  borderWidth: 1
+                                  callbacks: {
+                                      label: function(context) {
+                                          return ' ' + context.label + ': ' + context.raw;
+                                      }
+                                  }
                               }
-                          },
-                          animation: { animateScale: true, animateRotate: true }
+                          }
                       }
                   });
               });
@@ -412,7 +351,7 @@ export default function TerminalWidget({ externalLines, isScanning = false }: Te
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `Nexus_Audit_${data.repo_name}.html`;
+      a.download = `Nexus_Security_Audit_${data.repo_name}.html`;
       a.click();
       URL.revokeObjectURL(url);
     } catch (err) {
@@ -447,7 +386,7 @@ export default function TerminalWidget({ externalLines, isScanning = false }: Te
           {auditId && (
             <button
               onClick={downloadHtmlReport}
-              title="Download HTML Report"
+              title="Download Executive HTML Report"
               style={{ background: "rgba(0, 245, 255, 0.1)", border: "1px solid rgba(0, 245, 255, 0.3)", cursor: "pointer", color: "#00f5ff", padding: "3px 8px", borderRadius: "4px", display: "flex", alignItems: "center", gap: "4px", fontSize: "0.55rem", fontFamily: "'Orbitron', monospace", marginRight: "4px" }}
             >
               <FileText size={10} /> HTML REPORT
