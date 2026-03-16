@@ -10,15 +10,12 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime
 from sqlalchemy.orm import declarative_base, sessionmaker
-import google.generativeai as genai
 
-# Import your newly updated logic engine
+# --- LANGCHAIN IMPORTS FOR CHAT (GEMINI) ---
+from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
+
 import nexus_agent_logic  
-
-# --- 1. CONFIGURATION & AI SETUP ---
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "YOUR_GEMINI_API_KEY_HERE")
-if GEMINI_API_KEY != "YOUR_GEMINI_API_KEY_HERE":
-    genai.configure(api_key=GEMINI_API_KEY)
 
 app = FastAPI(title="Nexus DevSecOps API")
 
@@ -31,7 +28,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# --- 2. DATABASE SETUP ---
+# --- DATABASE SETUP ---
 Base = declarative_base()
 class SecurityAudit(Base):
     __tablename__ = 'audits'
@@ -39,13 +36,13 @@ class SecurityAudit(Base):
     repo_name = Column(String(255))
     timestamp = Column(DateTime, default=datetime.utcnow)
     status = Column(String(50))
-    report_data = Column(Text) # Saving raw deterministic JSON data
+    report_data = Column(Text) 
 
 engine = create_engine('sqlite:///nexus_history.db', connect_args={'check_same_thread': False})
 Base.metadata.create_all(engine)
 SessionLocal = sessionmaker(bind=engine)
 
-# --- 3. PYDANTIC ROUTE MODELS ---
+# --- PYDANTIC ROUTE MODELS ---
 class ChatMessage(BaseModel):
     role: str
     content: str
@@ -57,28 +54,38 @@ class ScanRequest(BaseModel):
     repo_url: str
 
 
-# --- 4. ENDPOINTS ---
+# --- ENDPOINTS ---
 @app.get("/")
 def read_root():
-    return {"status": "Nexus JSON-First Backend is Live"}
+    return {"status": "Nexus JSON-First Backend is Live (Powered by Google Gemini)"}
 
 @app.post("/chat")
 async def chat_endpoint(request: ChatRequest):
-    """Streams AI responses back to the Next.js ChatPanel (SSE format)"""
+    """Streams Gemini responses back to the Next.js ChatPanel (SSE format)"""
     async def event_generator():
         try:
-            history = [{"role": "user" if m.role == "user" else "model", "parts": [m.content]} for m in request.messages[:-1]]
-            latest_message = request.messages[-1].content
-
-            model = genai.GenerativeModel("gemini-1.5-flash")
-            chat = model.start_chat(history=history)
+            langchain_messages = [
+                SystemMessage(content="You are Nexus, an elite DevSecOps AI Assistant. Provide concise, expert cybersecurity advice.")
+            ]
             
-            response = chat.send_message(latest_message, stream=True)
-            for chunk in response:
-                if chunk.text:
-                    safe_text = chunk.text.replace("\n", "\\n")
+            for msg in request.messages:
+                if msg.role == "user":
+                    langchain_messages.append(HumanMessage(content=msg.content))
+                else:
+                    langchain_messages.append(AIMessage(content=msg.content))
+            
+            # Initialize Gemini for Streaming Chat
+            llm = ChatGoogleGenerativeAI(
+                model="gemini-1.5-flash",
+                temperature=0.7,
+                google_api_key=os.environ.get("GEMINI_API_KEY")
+            )
+            
+            for chunk in llm.stream(langchain_messages):
+                if chunk.content:
+                    safe_text = chunk.content.replace("\n", "\\n")
                     yield f"data: {safe_text}\n\n"
-                    await asyncio.sleep(0.02)
+                    await asyncio.sleep(0.01)
             
             yield "data: [DONE]\n\n"
         except Exception as e:
@@ -90,7 +97,6 @@ async def chat_endpoint(request: ChatRequest):
 
 @app.post("/scan/stream")
 async def scan_stream_endpoint(request: ScanRequest):
-    """Streams the real-time execution log AND generates the strict JSON report."""
     async def execution_generator():
         def emit(type_str, content):
             timestamp = datetime.now().strftime("%H:%M:%S")
@@ -104,33 +110,28 @@ async def scan_stream_endpoint(request: ScanRequest):
             yield emit("info", f"Target locked: {repo_url}")
             await asyncio.sleep(0.5)
             
-            # 1. SAST Cloning Phase
             yield emit("prompt", "Initializing dynamic workspace...")
             temp_dir = nexus_agent_logic.clone_repository(repo_url)
             if not temp_dir:
-                yield emit("critical", "Failed to clone repository.")
+                yield emit("critical", "Failed to clone repository. Ensure it is a valid Git URL.")
                 return
             yield emit("debug", f"Workspace created at {temp_dir}")
             yield emit("success", "Clone successful. Source code loaded.")
             
-            # 2. SAST Execution
             yield emit("prompt", "Engaging SAST Regex Engine...")
             await asyncio.sleep(1)
             sast_results = nexus_agent_logic.run_sast(temp_dir)
             yield emit("success", "SAST phase complete.")
             
-            # 3. SCA Execution
             yield emit("prompt", "Fetching manifest via GitHub API (SCA)...")
             await asyncio.sleep(1)
             sca_results = nexus_agent_logic.run_sca(repo_url)
             yield emit("success", "SCA phase complete.")
 
-            # 4. Deterministic AI Generation Phase
             yield emit("info", "Aggregating data streams for JSON-First AI analysis...")
             json_report = nexus_agent_logic.analyze_with_ai(sast_results, sca_results, repo_url)
             yield emit("success", "AI analysis complete. Deterministic JSON generated.")
             
-            # 5. Save to Database
             crit_count = json_report.get("critical_count", 0)
             status = "Failed" if crit_count > 0 else "Passed"
             repo_name = repo_url.rstrip("/").rstrip(".git").split("/")[-1]
@@ -159,7 +160,6 @@ async def scan_stream_endpoint(request: ScanRequest):
 
 @app.post("/api/scan")
 async def run_full_scan_sync(repo_url: str):
-    """Direct JSON endpoint for triggering a scan without the SSE stream."""
     try:
         temp_dir = nexus_agent_logic.clone_repository(repo_url)
         sast_data = nexus_agent_logic.run_sast(temp_dir)
@@ -173,14 +173,12 @@ async def run_full_scan_sync(repo_url: str):
 
 @app.get("/history")
 def get_history():
-    """Returns past audits for the frontend dropdown"""
     with SessionLocal() as session:
         audits = session.query(SecurityAudit).order_by(SecurityAudit.timestamp.desc()).limit(15).all()
         return [{"id": a.id, "repo_name": a.repo_name, "status": a.status, "timestamp": a.timestamp.isoformat()} for a in audits]
 
 @app.get("/report/{report_id}")
 def get_report(report_id: int):
-    """Fetches a specific report by ID and maps it to the frontend's expected format"""
     with SessionLocal() as session:
         audit = session.query(SecurityAudit).filter(SecurityAudit.id == report_id).first()
         if not audit:
