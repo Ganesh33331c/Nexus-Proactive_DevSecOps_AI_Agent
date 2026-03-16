@@ -1,42 +1,36 @@
 import os
 import json
-import time
-import shutil
-import tempfile
 import asyncio
-import re
 from datetime import datetime
-from typing import List, Dict, Any, Optional
+from typing import List, Optional
 
-from fastapi import FastAPI, BackgroundTasks, HTTPException
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime
 from sqlalchemy.orm import declarative_base, sessionmaker
-from git import Repo
 import google.generativeai as genai
 
-# Import your existing SCA logic
+# Import your newly updated logic engine
 import nexus_agent_logic  
 
 # --- 1. CONFIGURATION & AI SETUP ---
-# Ensure your API key is set in your environment variables
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "YOUR_GEMINI_API_KEY_HERE")
 if GEMINI_API_KEY != "YOUR_GEMINI_API_KEY_HERE":
     genai.configure(api_key=GEMINI_API_KEY)
 
 app = FastAPI(title="Nexus DevSecOps API")
 
-# Allow Next.js frontend (port 3000) to talk to this backend (port 8000)
 # Allow live Vercel frontend to talk to this backend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # <--- THIS IS THE FIX (Allows any frontend to connect)
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
 # --- 2. DATABASE SETUP ---
 Base = declarative_base()
 class SecurityAudit(Base):
@@ -45,13 +39,13 @@ class SecurityAudit(Base):
     repo_name = Column(String(255))
     timestamp = Column(DateTime, default=datetime.utcnow)
     status = Column(String(50))
-    report_data = Column(Text) # Saving raw JSON data for the frontend to render
+    report_data = Column(Text) # Saving raw deterministic JSON data
 
 engine = create_engine('sqlite:///nexus_history.db', connect_args={'check_same_thread': False})
 Base.metadata.create_all(engine)
 SessionLocal = sessionmaker(bind=engine)
 
-# --- 3. PYDANTIC MODELS (Data Validation) ---
+# --- 3. PYDANTIC ROUTE MODELS ---
 class ChatMessage(BaseModel):
     role: str
     content: str
@@ -61,52 +55,12 @@ class ChatRequest(BaseModel):
 
 class ScanRequest(BaseModel):
     repo_url: str
-    webhook_url: Optional[str] = None
 
-# --- 4. SAST LOGIC (Nuclear Regex Engine) ---
-def find_python_root(start_path):
-    """Recursively finds the first folder containing .py files."""
-    for dirpath, _, filenames in os.walk(start_path):
-        if any(f.endswith(".py") for f in filenames):
-            return dirpath
-    return start_path
 
-def scan_code_for_patterns(base_dir):
-    """Path-intelligent recursive Regex scan for RCE, Secrets, and Injection."""
-    actual_path = find_python_root(base_dir)
-    findings = []
-    
-    patterns = {
-        r'yaml\.load\(': "RCE Risk (Unsafe Deserialization)",
-        r'pickle\.load\(': "RCE Risk (Unsafe Deserialization)",
-        r'eval\(': "Arbitrary Code Execution",
-        r'exec\(': "Arbitrary Code Execution",
-        r'os\.system\(': "Command Injection",
-        r'subprocess\.Popen.*shell=True': "Command Injection",
-        r'(?i)(api_key|secret_key|password|token)\s*=\s*[\'"][a-zA-Z0-9_\-]{16,}[\'"]': "Hardcoded Secret",
-        r'app\.run\(.*debug=True': "Flask Debug Enabled",
-        r'verify=False': "SSL Verification Disabled (MITM Risk)"
-    }
-    
-    for dirpath, _, filenames in os.walk(actual_path):
-        for filename in filenames:
-            if filename.startswith('.') or filename.lower().endswith(('.png', '.jpg', '.pyc', '.exe')):
-                continue
-            filepath = os.path.join(dirpath, filename)
-            try:
-                with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
-                    for i, line in enumerate(f):
-                        for pattern, risk in patterns.items():
-                            if re.search(pattern, line):
-                                clean_line = line.strip()[:100]
-                                rel_path = os.path.relpath(filepath, base_dir)
-                                findings.append(f"[CRITICAL] Found '{risk}' in {rel_path} at line {i+1}: \"{clean_line}\"")
-            except Exception:
-                continue
-                
-    return "\n".join(findings) if findings else "SAFE: No critical SAST patterns found."
-
-# --- 5. ENDPOINTS ---
+# --- 4. ENDPOINTS ---
+@app.get("/")
+def read_root():
+    return {"status": "Nexus JSON-First Backend is Live"}
 
 @app.post("/chat")
 async def chat_endpoint(request: ChatRequest):
@@ -116,10 +70,7 @@ async def chat_endpoint(request: ChatRequest):
             history = [{"role": "user" if m.role == "user" else "model", "parts": [m.content]} for m in request.messages[:-1]]
             latest_message = request.messages[-1].content
 
-            available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-            best_model_name = next((m for m in available_models if "flash" in m.lower()), "models/gemini-1.5-flash")
-            
-            model = genai.GenerativeModel(best_model_name)
+            model = genai.GenerativeModel("gemini-1.5-flash")
             chat = model.start_chat(history=history)
             
             response = chat.send_message(latest_message, stream=True)
@@ -139,7 +90,7 @@ async def chat_endpoint(request: ChatRequest):
 
 @app.post("/scan/stream")
 async def scan_stream_endpoint(request: ScanRequest):
-    """Streams the real-time execution log to the Next.js TerminalWidget"""
+    """Streams the real-time execution log AND generates the strict JSON report."""
     async def execution_generator():
         def emit(type_str, content):
             timestamp = datetime.now().strftime("%H:%M:%S")
@@ -155,61 +106,40 @@ async def scan_stream_endpoint(request: ScanRequest):
             
             # 1. SAST Cloning Phase
             yield emit("prompt", "Initializing dynamic workspace...")
-            temp_dir = tempfile.mkdtemp()
+            temp_dir = nexus_agent_logic.clone_repository(repo_url)
+            if not temp_dir:
+                yield emit("critical", "Failed to clone repository.")
+                return
             yield emit("debug", f"Workspace created at {temp_dir}")
-            
-            yield emit("info", "Cloning remote repository...")
-            Repo.clone_from(repo_url, temp_dir)
             yield emit("success", "Clone successful. Source code loaded.")
             
             # 2. SAST Execution
             yield emit("prompt", "Engaging SAST Regex Engine...")
             await asyncio.sleep(1)
-            sast_results = scan_code_for_patterns(temp_dir)
-            if "SAFE" in sast_results:
-                yield emit("success", "SAST phase complete. No critical hardcoded patterns detected.")
-            else:
-                yield emit("critical", f"SAST identified potential vulnerabilities. {len(sast_results.split('[CRITICAL]'))-1} flags raised.")
+            sast_results = nexus_agent_logic.run_sast(temp_dir)
+            yield emit("success", "SAST phase complete.")
             
             # 3. SCA Execution
             yield emit("prompt", "Fetching manifest via GitHub API (SCA)...")
             await asyncio.sleep(1)
-            raw_sca_json = nexus_agent_logic.scan_repo_manifest(repo_url)
-            sca_results = json.loads(raw_sca_json) if raw_sca_json else {}
-            if "error" in sca_results:
-                yield emit("warning", f"SCA API notice: {sca_results['error']}")
-            else:
-                yield emit("success", f"Manifest parsed. Extracted dependencies.")
+            sca_results = nexus_agent_logic.run_sca(repo_url)
+            yield emit("success", "SCA phase complete.")
 
-            # 4. AI Generation Phase
-            yield emit("info", "Aggregating data streams for Gemini AI analysis...")
-            
-            available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-            best_model_name = next((m for m in available_models if "flash" in m.lower()), "models/gemini-1.5-flash")
-            model = genai.GenerativeModel(best_model_name)
-            
-            prompt = f"""
-            Analyze this data for {repo_url}. SAST: {sast_results}. SCA: {sca_results}.
-            Return ONLY a raw JSON array of finding objects, exactly like this (NO markdown blocks):
-            [ {{"title": "Unsafe YAML", "severity": "Critical", "description": "...", "poc": "...", "fix": "..."}} ]
-            """
-            
-            response = model.generate_content(prompt)
-            clean_json = response.text.replace("```json", "").replace("```", "").strip()
-            findings = json.loads(clean_json)
-            
-            yield emit("success", "AI analysis complete. Report generated.")
+            # 4. Deterministic AI Generation Phase
+            yield emit("info", "Aggregating data streams for JSON-First AI analysis...")
+            json_report = nexus_agent_logic.analyze_with_ai(sast_results, sca_results, repo_url)
+            yield emit("success", "AI analysis complete. Deterministic JSON generated.")
             
             # 5. Save to Database
-            crit_count = sum(1 for f in findings if f.get('severity', '').lower() == 'critical')
+            crit_count = json_report.get("critical_count", 0)
             status = "Failed" if crit_count > 0 else "Passed"
-            repo_name = repo_url.split("/")[-1]
+            repo_name = repo_url.rstrip("/").rstrip(".git").split("/")[-1]
             
             with SessionLocal() as session:
                 audit = SecurityAudit(
                     repo_name=repo_name, 
                     status=status, 
-                    report_data=json.dumps(findings)
+                    report_data=json.dumps(json_report)
                 )
                 session.add(audit)
                 session.commit()
@@ -222,10 +152,23 @@ async def scan_stream_endpoint(request: ScanRequest):
             yield "data: [DONE]\n\n"
             
         finally:
-            if temp_dir and os.path.exists(temp_dir):
-                shutil.rmtree(temp_dir)
+            nexus_agent_logic.cleanup(temp_dir)
 
     return StreamingResponse(execution_generator(), media_type="text/event-stream")
+
+
+@app.post("/api/scan")
+async def run_full_scan_sync(repo_url: str):
+    """Direct JSON endpoint for triggering a scan without the SSE stream."""
+    try:
+        temp_dir = nexus_agent_logic.clone_repository(repo_url)
+        sast_data = nexus_agent_logic.run_sast(temp_dir)
+        sca_data = nexus_agent_logic.run_sca(repo_url)
+        json_report = nexus_agent_logic.analyze_with_ai(sast_data, sca_data, repo_url)
+        nexus_agent_logic.cleanup(temp_dir)
+        return json_report
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/history")
@@ -237,15 +180,20 @@ def get_history():
 
 @app.get("/report/{report_id}")
 def get_report(report_id: int):
-    """Fetches a specific report by ID"""
+    """Fetches a specific report by ID and maps it to the frontend's expected format"""
     with SessionLocal() as session:
         audit = session.query(SecurityAudit).filter(SecurityAudit.id == report_id).first()
         if not audit:
             raise HTTPException(status_code=404, detail="Report not found")
+            
+        report_data = json.loads(audit.report_data) if audit.report_data else {}
+        
         return {
             "id": audit.id,
             "repo_name": audit.repo_name,
             "status": audit.status,
             "timestamp": audit.timestamp.isoformat(),
-            "findings": json.loads(audit.report_data) if audit.report_data else []
+            "findings": report_data.get("vulnerabilities", []),
+            "critical_count": report_data.get("critical_count", 0),
+            "scan_status": report_data.get("scan_status", audit.status)
         }
