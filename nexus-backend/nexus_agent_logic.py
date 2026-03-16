@@ -1,6 +1,5 @@
 import os
 import json
-import requests
 import tempfile
 import shutil
 import re
@@ -14,19 +13,23 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 
 # ─── 1. STRICT JSON SCHEMAS (PYDANTIC) ───
 class Vulnerability(BaseModel):
-    id: str = Field(description="A unique identifier (e.g., 'SEC-001', 'CVE-2023-1234').")
-    title: str = Field(description="A concise, professional title for the vulnerability.")
-    severity: Literal["critical", "high", "medium", "low"] = Field(description="The strict severity level.")
+    id: str = Field(description="Generate a unique identifier like 'SEC-001' or 'CVE-2023-1234'.")
+    title: str = Field(description="Write a concise, professional title (e.g., 'JWT Signature Verification Bypass').")
+    severity: Literal["critical", "high", "medium", "low"] = Field(description="Select the appropriate strict severity level.")
+    
+    # THE FIX: Positive Commands only. Force the AI to explain it.
     analysis: str = Field(
-        description="Write a detailed, 3-4 sentence explanation of the vulnerability. Explain why it is a security risk. Placeholders are strictly forbidden."
+        description="Explain the attack vector in 3 to 4 sentences. Start your explanation with 'This vulnerability occurs when...' and explain the worst-case scenario if exploited by an attacker."
     )
-    poc: str = Field(description="The exact file path, line of code, or dependency version that triggered the finding.")
+    poc: str = Field(description="Include the exact file path and line of code, or the vulnerable dependency version found in the raw logs.")
+    
+    # THE FIX: Force the AI to write the patch.
     remediation: str = Field(
-        description="Provide exact, actionable patch instructions (code changes, terminal commands, or version bumps). Vague advice is forbidden."
+        description="Write a step-by-step guide to fixing this. Provide the exact Python code rewrite or the exact 'pip install' terminal command required to patch the vulnerability."
     )
 
 class SecurityReport(BaseModel):
-    scan_status: str = Field(description="Overall status (e.g., 'Completed - Action Required').")
+    scan_status: str = Field(description="Set to 'Success' or 'Failed'.")
     critical_count: int = Field(description="Total number of critical vulnerabilities found.")
     high_count: int = Field(description="Total number of high vulnerabilities found.")
     medium_count: int = Field(description="Total number of medium vulnerabilities found.")
@@ -47,7 +50,7 @@ def cleanup(repo_path):
         shutil.rmtree(repo_path, ignore_errors=True)
 
 
-# ─── 3. SAST SCANNER (Regex Engine) ───
+# ─── 3. SAST SCANNER (Local Regex Engine) ───
 def run_sast(repo_path):
     if not repo_path:
         return "SAST Scan Failed: Repository not cloned."
@@ -57,7 +60,8 @@ def run_sast(repo_path):
         "Disabled SSL Verification": r"verify\s*=\s*False",
         "Hardcoded Secret Key": r"SECRET_KEY\s*=\s*['\"][a-zA-Z0-9_]+['\"]",
         "Debug Mode Enabled": r"debug\s*=\s*True",
-        "Exposed API Key": r"api_key\s*=\s*['\"][a-zA-Z0-9_\-]+['\"]"
+        "Exposed API Key": r"api_key\s*=\s*['\"][a-zA-Z0-9_\-]+['\"]",
+        "JWT Signature Bypass": r"verify\s*=\s*False" # Catching the JWT flaw specifically
     }
 
     for root, dirs, files in os.walk(repo_path):
@@ -68,7 +72,7 @@ def run_sast(repo_path):
             if file.endswith('.py') or file.endswith('.js') or file.endswith('.env'):
                 file_path = os.path.join(root, file)
                 try:
-                    with open(file_path, 'r', encoding='utf-8') as f:
+                    with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
                         lines = f.readlines()
                         for i, line in enumerate(lines):
                             for vulnerability, regex in patterns.items():
@@ -81,89 +85,49 @@ def run_sast(repo_path):
     return json.dumps(findings) if findings else "No SAST vulnerabilities found."
 
 
-# ─── 4. SCA SCANNER (Deep Scan via GitHub API) ───
-def run_sca(repo_url):
-    try:
-        clean_url = repo_url.rstrip("/").rstrip(".git").split("github.com/")[-1]
-    except:
-        return json.dumps({"error": "Invalid URL format."})
-
-    api_base = f"https://api.github.com/repos/{clean_url}/contents"
-    headers = {"Accept": "application/vnd.github.v3+json"}
-    token = os.environ.get('GITHUB_TOKEN')
+# ─── 4. SCA SCANNER (Local File Parsing - NO GITHUB API) ───
+def run_sca(repo_path):
+    """Scans the local cloned repository for dependency manifests."""
+    if not repo_path:
+        return json.dumps({"error": "SCA Scan Failed: Repository not cloned."})
+        
+    manifests_found = []
     
-    if token:
-        headers['Authorization'] = f"token {token}"
+    for root, dirs, files in os.walk(repo_path):
+        if '.git' in dirs:
+            dirs.remove('.git')
+            
+        if "requirements.txt" in files:
+            file_path = os.path.join(root, "requirements.txt")
+            try:
+                with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                    # Read dependencies, ignoring comments and empty lines
+                    deps = [line.strip() for line in f if line.strip() and not line.strip().startswith('#')]
+                    rel_path = os.path.relpath(file_path, repo_path)
+                    manifests_found.append({"manifest_file": rel_path, "dependencies": deps})
+            except Exception as e:
+                continue
 
-    report = {
-        "target": clean_url,
-        "critical_files_found": [],
-        "dependencies": [],
-        "scan_status": "Success", 
-        "debug_log": [] 
-    }
-
-    def fetch_file_content(download_url):
-        try:
-            resp = requests.get(download_url, headers=headers, timeout=10)
-            return [line.strip() for line in resp.text.split('\n') if line.strip() and not line.startswith('#')]
-        except:
-            return []
-
-    try:
-        resp = requests.get(api_base, headers=headers, timeout=10)
-        if resp.status_code != 200:
-            return json.dumps({"error": f"GitHub API Error: {resp.status_code}"})
+    if not manifests_found:
+        return json.dumps({"message": "No requirements.txt found in repository."})
         
-        root_files = resp.json()
-        
-        found_manifest = False
-        for f in root_files:
-            if f['name'] == "requirements.txt":
-                report["critical_files_found"].append("requirements.txt (Root)")
-                report["dependencies"] = fetch_file_content(f['download_url'])
-                found_manifest = True
-                break
-        
-        if not found_manifest:
-            subfolders = [f for f in root_files if f['type'] == 'dir']
-            for folder in subfolders:
-                folder_url = f"{api_base}/{folder['name']}"
-                sub_resp = requests.get(folder_url, headers=headers, timeout=10)
-                if sub_resp.status_code == 200:
-                    sub_files = sub_resp.json()
-                    for sub_f in sub_files:
-                        if sub_f['name'] == "requirements.txt":
-                            report["critical_files_found"].append(f"requirements.txt ({folder['name']}/)")
-                            report["dependencies"] = fetch_file_content(sub_f['download_url'])
-                            found_manifest = True
-                            break
-                if found_manifest:
-                    break
-
-    except Exception as e:
-        return json.dumps({"error": f"Crash: {str(e)}"})
-
-    return json.dumps(report, indent=2)
+    return json.dumps({"scan_status": "Success", "manifests": manifests_found}, indent=2)
 
 
 # ─── 5. DETERMINISTIC AI ANALYSIS ENGINE (GEMINI) ───
 def analyze_with_ai(sast_results, sca_results, repo_url):
     NEXUS_SYSTEM_PROMPT = """
     You are the core intelligence engine of Nexus, an elite, autonomous Senior AppSec Engineer.
-    Your objective is to synthesize raw telemetry from our DevSecOps pipeline into a professional, actionable JSON report.
+    Your objective is to synthesize raw telemetry from our DevSecOps pipeline into a professional JSON report.
 
-    You will receive raw logs from TWO distinct scanners for the repository: {repo_url}
-    1. SAST Scanner: Identifies static code flaws, hardcoded secrets, and injection risks.
-    2. SCA Scanner: Identifies outdated, vulnerable, or End-of-Life (EOL) dependencies.
+    You will receive raw logs from TWO distinct local scanners for the repository: {repo_url}
+    1. SAST Scanner: Identifies static code flaws.
+    2. SCA Scanner: Identifies dependencies from local requirements.txt files.
 
     YOUR DIRECTIVES:
-    - Synthesize both inputs. If the SCA scanner finds an outdated library, and the SAST scanner finds a flaw caused by it, correlate them.
-    - DO NOT drop SCA dependency findings. Every vulnerable package must be documented.
-    - Write deep, contextual analysis. Explain the 'Why'.
-    - Provide exact remediation steps. Explain the 'How'.
-    - Never use placeholder text like "No description provided".
-    - Combine identical SAST findings (e.g., if 'verify=False' appears 4 times, make it ONE vulnerability card and list the 4 lines in the POC).
+    1. SYNTHESIS: You must deeply analyze BOTH logs. If the SCA scanner lists an outdated or vulnerable library (like PyYAML 3.x or Flask 0.x), you MUST create a vulnerability card for it.
+    2. CONTEXT: Act as a security tutor. Explain exactly how a hacker would exploit the raw finding. 
+    3. DEDUPLICATION: If 'verify=False' appears 4 times, group them into ONE single vulnerability card and list all affected lines in the 'poc' field. Do not repeat titles.
     """
 
     prompt_template = ChatPromptTemplate.from_messages([
