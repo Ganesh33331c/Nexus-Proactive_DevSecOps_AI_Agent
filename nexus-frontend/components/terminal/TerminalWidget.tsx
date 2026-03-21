@@ -227,12 +227,9 @@ export default function TerminalWidget({
           { type: "critical" as const, content: `Scan error: ${err.message}` },
         ]);
         // Fallback error PDF if no pdf_error SSE came through
-        pushPdf((prev: PdfStatus) => {
-          if (prev.status === "idle") {
-            void fetchErrorPdf(err.message, localRepoUrl, "unknown");
-          }
-          return prev;
-        } as unknown as PdfStatus);
+        if (!hasPdf) {
+          void fetchErrorPdf(err.message, localRepoUrl, "unknown");
+        }
       },
     );
   }, [localRepoUrl, localScanning, resetPdf, fetchReportPdf, fetchErrorPdf, pushPdf]);
