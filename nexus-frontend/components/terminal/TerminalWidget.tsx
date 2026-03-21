@@ -10,37 +10,49 @@ import {
   Download,
   ChevronRight,
   FileText,
-  X
+  X,
+  AlertTriangle,
+  ExternalLink,
+  Loader2,
 } from "lucide-react";
-import { streamScan, TerminalLine, getScanReport } from "@/lib/api";
+import { streamScan, TerminalLine } from "@/lib/api";
 
-// ─── Syntax Highlighter ─────────────────────────────────────
+const BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+
+// ─── Types ───────────────────────────────────────────────────────────────────
+
+type PdfState =
+  | { status: "idle" }
+  | { status: "loading"; message: string }
+  | { status: "ready"; url: string; filename: string; isError: boolean }
+  | { status: "error"; message: string };
+
+// ─── Syntax Highlighter ──────────────────────────────────────────────────────
+
 function colorize(line: TerminalLine): React.ReactNode {
   const { type, content, timestamp } = line;
-
   const colorMap: Record<TerminalLine["type"], string> = {
     critical: "#ff4757",
-    warning: "#ffa502",
-    success: "#2ed573",
-    info: "#00f5ff",
-    debug: "#747d8c",
-    prompt: "#a855f7",
+    warning:  "#ffa502",
+    success:  "#2ed573",
+    info:     "#00f5ff",
+    debug:    "#747d8c",
+    prompt:   "#a855f7",
   };
-
   const color = colorMap[type] || "#cbd5e1";
   const ts = timestamp
     ? `[${timestamp}] `
     : `[${new Date().toLocaleTimeString("en-US", { hour12: false })}] `;
 
   const highlighted = content
-    .replace(/\b(CRITICAL|FATAL|ERROR|RCE)\b/g, '<span style="color:#ff4757;font-weight:600">$1</span>')
-    .replace(/\b(WARNING|WARN|HIGH)\b/g, '<span style="color:#ffa502;font-weight:600">$1</span>')
-    .replace(/\b(SUCCESS|PASS|CLEAN|SAFE)\b/g, '<span style="color:#2ed573;font-weight:600">$1</span>')
-    .replace(/\b(INFO|SCAN|FETCH)\b/g, '<span style="color:#00f5ff">$1</span>')
-    .replace(/("[^"]*")/g, '<span style="color:#eccc68">$1</span>')
-    .replace(/\b(\d+\.\d+\.\d+\.\d+)\b/g, '<span style="color:#70a1ff">$1</span>')
-    .replace(/(\/[^\s]+)/g, '<span style="color:#a4b0be">$1</span>')
-    .replace(/\b(CVE-\d{4}-\d+)/g, '<span style="color:#ff6b81;font-weight:600">$1</span>');
+    .replace(/\b(CRITICAL|FATAL|ERROR|RCE)\b/g,   '<span style="color:#ff4757;font-weight:600">$1</span>')
+    .replace(/\b(WARNING|WARN|HIGH)\b/g,           '<span style="color:#ffa502;font-weight:600">$1</span>')
+    .replace(/\b(SUCCESS|PASS|CLEAN|SAFE)\b/g,     '<span style="color:#2ed573;font-weight:600">$1</span>')
+    .replace(/\b(INFO|SCAN|FETCH)\b/g,             '<span style="color:#00f5ff">$1</span>')
+    .replace(/("[^"]*")/g,                         '<span style="color:#eccc68">$1</span>')
+    .replace(/\b(\d+\.\d+\.\d+\.\d+)\b/g,         '<span style="color:#70a1ff">$1</span>')
+    .replace(/(\/[^\s]+)/g,                        '<span style="color:#a4b0be">$1</span>')
+    .replace(/\b(CVE-\d{4}-\d+)/g,                '<span style="color:#ff6b81;font-weight:600">$1</span>');
 
   return (
     <span>
@@ -51,29 +63,278 @@ function colorize(line: TerminalLine): React.ReactNode {
 }
 
 const DEMO_LINES: TerminalLine[] = [
-  { type: "success", content: "NEXUS Terminal v2.4.1 initialized", timestamp: "00:00:01" },
-  { type: "info", content: "Awaiting target repository...", timestamp: "00:00:01" },
-  { type: "debug", content: "SAST engine: READY | SCA engine: READY | AI model: READY", timestamp: "00:00:02" },
-  { type: "prompt", content: "Enter a GitHub URL in the chat to begin scanning.", timestamp: "00:00:02" },
+  { type: "success", content: "NEXUS Terminal v2.4.1 initialized",                    timestamp: "00:00:01" },
+  { type: "info",    content: "Awaiting target repository...",                         timestamp: "00:00:01" },
+  { type: "debug",   content: "SAST engine: READY | SCA engine: READY | AI: READY",   timestamp: "00:00:02" },
+  { type: "prompt",  content: "Enter a GitHub URL below to begin scanning.",           timestamp: "00:00:02" },
 ];
+
+// ─── PDF Viewer Panel ─────────────────────────────────────────────────────────
+
+interface PdfViewerProps {
+  pdfState: PdfState;
+  onClose: () => void;
+}
+
+function PdfViewer({ pdfState, onClose }: PdfViewerProps) {
+  if (pdfState.status === "idle") return null;
+
+  const handleDownload = () => {
+    if (pdfState.status !== "ready") return;
+    const a = document.createElement("a");
+    a.href = pdfState.url;
+    a.download = pdfState.filename;
+    a.click();
+  };
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 32 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: 32 }}
+      transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
+      style={{
+        width: "100%",
+        background: "rgba(2,4,9,0.98)",
+        borderTop: "1px solid rgba(0,245,255,0.15)",
+        display: "flex",
+        flexDirection: "column",
+        /* Takes remaining vertical space pushed down by the terminal */
+        flex: "1 1 0",
+        minHeight: 0,
+        overflow: "hidden",
+      }}
+    >
+      {/* ── Viewer Header ────────────────────────────────────────────── */}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          padding: "10px 16px",
+          background: "rgba(6,13,26,0.95)",
+          borderBottom: "1px solid rgba(0,245,255,0.08)",
+          flexShrink: 0,
+          gap: 8,
+        }}
+      >
+        {/* Left — title */}
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          {pdfState.status === "loading" ? (
+            <Loader2
+              size={13}
+              style={{ color: "#00f5ff", animation: "spin 1s linear infinite" }}
+            />
+          ) : pdfState.status === "ready" && pdfState.isError ? (
+            <AlertTriangle size={13} style={{ color: "#ff4757" }} />
+          ) : (
+            <FileText size={13} style={{ color: "#00f5ff" }} />
+          )}
+          <span
+            style={{
+              fontFamily: "'Orbitron', monospace",
+              fontSize: "0.58rem",
+              letterSpacing: "0.12em",
+              color:
+                pdfState.status === "ready" && pdfState.isError
+                  ? "#ff4757"
+                  : "#00f5ff",
+            }}
+          >
+            {pdfState.status === "loading"
+              ? pdfState.message.toUpperCase()
+              : pdfState.status === "ready" && pdfState.isError
+              ? "SCAN FAILURE REPORT"
+              : pdfState.status === "ready"
+              ? "SECURITY AUDIT REPORT"
+              : "REPORT ERROR"}
+          </span>
+        </div>
+
+        {/* Right — actions */}
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          {pdfState.status === "ready" && (
+            <>
+              {/* Open in new tab */}
+              <a
+                href={pdfState.url}
+                target="_blank"
+                rel="noreferrer"
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 5,
+                  padding: "4px 10px",
+                  background: "rgba(0,245,255,0.06)",
+                  border: "1px solid rgba(0,245,255,0.2)",
+                  borderRadius: 5,
+                  cursor: "pointer",
+                  color: "#00f5ff",
+                  fontFamily: "'Orbitron', monospace",
+                  fontSize: "0.5rem",
+                  letterSpacing: "0.08em",
+                  textDecoration: "none",
+                }}
+              >
+                <ExternalLink size={9} />
+                OPEN TAB
+              </a>
+
+              {/* Download */}
+              <button
+                onClick={handleDownload}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 5,
+                  padding: "4px 10px",
+                  background: "rgba(0,245,255,0.1)",
+                  border: "1px solid rgba(0,245,255,0.3)",
+                  borderRadius: 5,
+                  cursor: "pointer",
+                  color: "#00f5ff",
+                  fontFamily: "'Orbitron', monospace",
+                  fontSize: "0.5rem",
+                  letterSpacing: "0.08em",
+                }}
+              >
+                <Download size={9} />
+                DOWNLOAD PDF
+              </button>
+            </>
+          )}
+
+          {/* Close — fully removes the viewer */}
+          <button
+            onClick={onClose}
+            title="Close report"
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              width: 26,
+              height: 26,
+              background: "rgba(255,71,87,0.08)",
+              border: "1px solid rgba(255,71,87,0.25)",
+              borderRadius: 5,
+              cursor: "pointer",
+              color: "#ff4757",
+              flexShrink: 0,
+            }}
+          >
+            <X size={12} />
+          </button>
+        </div>
+      </div>
+
+      {/* ── Viewer Body ───────────────────────────────────────────────── */}
+      <div style={{ flex: 1, minHeight: 0, position: "relative", background: "#020617" }}>
+        {pdfState.status === "loading" && (
+          <div
+            style={{
+              position: "absolute",
+              inset: 0,
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 16,
+              color: "rgba(0,245,255,0.6)",
+            }}
+          >
+            {/* Animated spinner */}
+            <div
+              style={{
+                width: 48,
+                height: 48,
+                borderRadius: "50%",
+                border: "2px solid rgba(0,245,255,0.1)",
+                borderTop: "2px solid #00f5ff",
+                animation: "spin 0.9s linear infinite",
+              }}
+            />
+            <span
+              style={{
+                fontFamily: "'Orbitron', monospace",
+                fontSize: "0.62rem",
+                letterSpacing: "0.1em",
+                color: "rgba(0,245,255,0.6)",
+              }}
+            >
+              {pdfState.message}
+            </span>
+          </div>
+        )}
+
+        {pdfState.status === "ready" && (
+          <iframe
+            key={pdfState.url}   /* remount on new URL */
+            src={pdfState.url}
+            style={{
+              width: "100%",
+              height: "100%",
+              border: "none",
+              background: "#020617",
+            }}
+            title="Nexus Security Report"
+          />
+        )}
+
+        {pdfState.status === "error" && (
+          <div
+            style={{
+              position: "absolute",
+              inset: 0,
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 12,
+              padding: 24,
+            }}
+          >
+            <AlertTriangle size={32} style={{ color: "#ff4757" }} />
+            <p
+              style={{
+                fontFamily: "'JetBrains Mono', monospace",
+                fontSize: "0.7rem",
+                color: "#ff4757",
+                textAlign: "center",
+                maxWidth: 400,
+              }}
+            >
+              {pdfState.message}
+            </p>
+          </div>
+        )}
+      </div>
+
+      {/* Spin keyframes injected once */}
+      <style>{`
+        @keyframes spin { to { transform: rotate(360deg); } }
+      `}</style>
+    </motion.div>
+  );
+}
+
+// ─── Main Component ───────────────────────────────────────────────────────────
 
 interface TerminalWidgetProps {
   externalLines?: TerminalLine[];
   isScanning?: boolean;
 }
 
-export default function TerminalWidget({ externalLines, isScanning = false }: TerminalWidgetProps) {
+export default function TerminalWidget({
+  externalLines,
+  isScanning = false,
+}: TerminalWidgetProps) {
   const [lines, setLines] = useState<TerminalLine[]>(DEMO_LINES);
   const [localRepoUrl, setLocalRepoUrl] = useState("");
   const [localScanning, setLocalScanning] = useState(false);
-  const [auditId, setAuditId] = useState<number | null>(null);
-  
-  // Modal State
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const [showPreview, setShowPreview] = useState(false);
-  const [reportFilename, setReportFilename] = useState("");
+  const [pdfState, setPdfState] = useState<PdfState>({ status: "idle" });
 
-  const abortRef = useRef<AbortController | null>(null);
+  const abortRef  = useRef<AbortController | null>(null);
+  const blobRef   = useRef<string | null>(null); // track current blob URL for cleanup
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -84,319 +345,138 @@ export default function TerminalWidget({ externalLines, isScanning = false }: Te
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [lines]);
 
+  // Revoke previous blob URL whenever a new one is created
+  const setBlobUrl = (url: string) => {
+    if (blobRef.current) URL.revokeObjectURL(blobRef.current);
+    blobRef.current = url;
+  };
+
+  // Clean up on unmount
   useEffect(() => {
     return () => {
-      if (previewUrl) URL.revokeObjectURL(previewUrl);
+      if (blobRef.current) URL.revokeObjectURL(blobRef.current);
     };
-  }, [previewUrl]);
+  }, []);
 
-  // ─── DYNAMIC HTML REPORT GENERATOR ───
-  const previewHtmlReport = useCallback(async (idToFetch: number) => {
+  // ── Fetch report PDF from FastAPI /pdf-report/:id ─────────────────────────
+  const fetchReportPdf = useCallback(async (reportId: number) => {
+    setPdfState({ status: "loading", message: "Generating PDF report..." });
     try {
-      const res = await getScanReport(idToFetch);
-      const data = res.data;
-      const findings = data.findings || [];
-      const counts = { critical: 0, high: 0, medium: 0, low: 0 };
-      
-      findings.forEach((f: any) => {
-        const sev = (f.severity || "low").toLowerCase();
-        if (counts[sev as keyof typeof counts] !== undefined) {
-          counts[sev as keyof typeof counts]++;
-        }
+      const res = await fetch(`${BASE_URL}/pdf-report/${reportId}`);
+      if (!res.ok) {
+        const err = await res.text();
+        throw new Error(`Server returned ${res.status}: ${err}`);
+      }
+      const blob = await res.blob();
+      const url  = URL.createObjectURL(blob);
+      setBlobUrl(url);
+
+      const repoName = localRepoUrl.rstrip?.("/")?.split("/")?.pop() ?? `report_${reportId}`;
+      setPdfState({
+        status: "ready",
+        url,
+        filename: `Nexus_Audit_${reportId}.pdf`,
+        isError: false,
       });
-
-      const totalHighRisk = counts.critical + counts.high;
-      const totalModerateRisk = counts.medium + counts.low;
-
-      // Exact mapping from the user's requested layout
-      const cardsHtml = findings.map((f: any, index: number) => {
-        const sev = (f.severity || "low").toLowerCase();
-        
-        let sevClass = "";
-        let sevBg = "";
-        let sevText = "";
-        let sevBorder = "";
-
-        if (sev === "critical" || sev === "high") {
-            sevClass = "severity-high border-l-4 border-l-destructive";
-            sevBg = "bg-destructive/20";
-            sevText = "text-destructive";
-            sevBorder = "border-destructive/30";
-        } else if (sev === "medium") {
-            sevClass = "severity-medium border-l-4 border-l-warning";
-            sevBg = "bg-warning/20";
-            sevText = "text-warning";
-            sevBorder = "border-warning/30";
-        } else {
-            sevClass = "border-l-4 border-l-primary";
-            sevBg = "bg-primary/20";
-            sevText = "text-primary";
-            sevBorder = "border-primary/30";
-        }
-
-        const findingId = `SEC-${String(index + 1).padStart(3, '0')}`;
-
-        return `
-        <div class="vulnerability-card glass-panel rounded-[2rem] p-8 border border-white/10 ${sevClass}" data-sev="${sev}">
-            <div class="flex flex-col md:flex-row md:items-start justify-between gap-6 mb-8">
-                <div>
-                    <div class="flex items-center gap-3 mb-2">
-                        <span class="px-3 py-1 rounded-full ${sevBg} ${sevText} text-[10px] font-extrabold uppercase tracking-widest border ${sevBorder}">${sev} Severity</span>
-                        <span class="text-muted-foreground text-sm font-mono">ID: ${findingId}</span>
-                    </div>
-                    <h3 class="font-display text-2xl font-bold text-foreground">${f.title || 'Unknown Finding'}</h3>
-                </div>
-            </div>
-
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-10 mb-2">
-                <div class="space-y-4">
-                    <h4 class="text-sm font-bold uppercase tracking-widest text-primary/80">Analysis</h4>
-                    <p class="text-muted-foreground leading-relaxed">
-                        ${f.description || 'No description provided.'}
-                    </p>
-                    
-                    ${f.poc && f.poc !== 'N/A' ? `
-                    <div class="pt-4">
-                        <h4 class="text-[10px] font-bold uppercase tracking-widest text-primary/50 mb-2">Proof of Concept</h4>
-                        <pre class="bg-black/40 p-4 rounded-xl border border-white/10 font-mono text-xs text-blue-300 overflow-x-auto whitespace-pre-wrap">${f.poc}</pre>
-                    </div>` : ''}
-                </div>
-                
-                <div class="space-y-4 flex flex-col">
-                    <h4 class="text-sm font-bold uppercase tracking-widest text-primary/80">Remediation Patch</h4>
-                    <div class="relative group flex-1">
-                        <div class="absolute -inset-1 bg-gradient-to-r from-primary to-blue-600 rounded-xl blur opacity-25 group-hover:opacity-40 transition duration-1000"></div>
-                        <pre class="relative h-full bg-black/40 p-5 rounded-xl border border-white/10 font-mono text-sm overflow-x-auto text-blue-300 whitespace-pre-wrap">${f.fix || 'Manual intervention required.'}</pre>
-                    </div>
-                </div>
-            </div>
-        </div>`;
-      }).join("");
-
-      // Exact CSS and Colors restored
-      const htmlString = `<!DOCTYPE html>
-<html lang="en" class="dark">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Security Analysis Report | DevSecOps Audit</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Outfit:wght@400;600;800&display=swap" rel="stylesheet">
-    <script>
-        tailwind.config = {
-            darkMode: 'class',
-            theme: {
-                extend: {
-                    colors: {
-                        border: "hsl(217.2 32.6% 17.5%)",
-                        input: "hsl(217.2 32.6% 17.5%)",
-                        ring: "hsl(224.3 76.3% 48%)",
-                        background: "hsl(222.2 84% 4.9%)",
-                        foreground: "hsl(210 40% 98%)",
-                        primary: { DEFAULT: "hsl(217.2 91.2% 59.8%)", foreground: "hsl(222.2 47.4% 11.2%)" },
-                        secondary: { DEFAULT: "hsl(217.2 32.6% 12%)", foreground: "hsl(210 40% 98%)" },
-                        destructive: { DEFAULT: "hsl(0 84.2% 60.2%)", foreground: "hsl(210 40% 98%)" },
-                        warning: { DEFAULT: "hsl(38 92% 50%)", foreground: "hsl(210 40% 98%)" },
-                        muted: { DEFAULT: "hsl(217.2 32.6% 17.5%)", foreground: "hsl(215 20.2% 65.1%)" },
-                        accent: { DEFAULT: "hsl(217.2 32.6% 17.5%)", foreground: "hsl(210 40% 98%)" },
-                        popover: { DEFAULT: "hsl(222.2 84% 4.9%)", foreground: "hsl(210 40% 98%)" },
-                        card: { DEFAULT: "hsl(222.2 84% 6.5%)", foreground: "hsl(210 40% 98%)" },
-                    },
-                    fontFamily: {
-                        sans: ['Inter', 'sans-serif'],
-                        display: ['Outfit', 'sans-serif'],
-                        mono: ['JetBrains Mono', 'monospace'],
-                    }
-                }
-            }
-        }
-    </script>
-    <style>
-        body {
-            background-color: #020617;
-            background-image: 
-                radial-gradient(at 0% 0%, hsla(217, 91%, 60%, 0.07) 0px, transparent 50%),
-                radial-gradient(at 100% 0%, hsla(210, 40%, 98%, 0.03) 0px, transparent 50%);
-            background-attachment: fixed;
-        }
-        .glass-panel {
-            background: rgba(15, 23, 42, 0.6);
-            backdrop-filter: blur(12px);
-            border: 1px solid rgba(255, 255, 255, 0.08);
-        }
-        .vulnerability-card { transition: transform 0.2s ease-out, border-color 0.2s ease; }
-        .vulnerability-card:hover { transform: translateY(-2px); border-color: rgba(255, 255, 255, 0.15); }
-        .severity-high { box-shadow: 0 0 20px -5px rgba(239, 68, 68, 0.3); }
-        .severity-medium { box-shadow: 0 0 20px -5px rgba(245, 158, 11, 0.2); }
-        pre::-webkit-scrollbar { height: 4px; }
-        pre::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.1); border-radius: 10px; }
-        .hidden { display: none !important; }
-    </style>
-</head>
-<body class="text-foreground font-sans antialiased min-h-screen">
-
-    <header class="sticky top-0 z-50 w-full border-b border-white/10 glass-panel">
-        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div class="flex h-20 items-center justify-between">
-                <div class="flex items-center gap-3">
-                    <div class="w-10 h-10 bg-primary rounded-xl flex items-center justify-center shadow-lg shadow-primary/20">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="w-6 h-6 text-primary-foreground" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-                    </div>
-                    <div>
-                        <h1 class="font-display font-extrabold text-xl tracking-tight text-foreground">Security Analysis Report</h1>
-                        <p class="text-[10px] uppercase tracking-widest text-muted-foreground font-bold">DevSecOps Audit</p>
-                    </div>
-                </div>
-                <div class="hidden md:block">
-                    <div class="flex items-center gap-2 px-4 py-2 rounded-full bg-white/5 border border-white/10 text-sm font-medium text-primary">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 22v-4a4.8 4.8 0 0 0-1-3.5c3 0 6-2 6-5.5.08-1.25-.27-2.48-1-3.5.28-1.15.28-2.35 0-3.5 0 0-1 0-3 1.5-2.64-.5-5.36-.5-8 0C6 2 5 2 5 2c-.28 1.15-.28 2.35 0 3.5-.73 1.02-1.08 2.25-1 3.5 0 3.5 3 5.5 6 5.5-.39.49-.68 1.05-.85 1.65-.17.6-.22 1.23-.15 1.85v4"/><path d="M9 18c-4.51 2-5-2-7-2"/></svg>
-                        ${data.repo_name}
-                    </div>
-                </div>
-            </div>
-        </div>
-    </header>
-
-    <main class="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-        <section class="mb-16">
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div class="md:col-span-2 glass-panel rounded-3xl p-8 border border-white/10 relative overflow-hidden group">
-                    <div class="absolute -right-10 -top-10 w-40 h-40 bg-primary/10 rounded-full blur-3xl group-hover:bg-primary/20 transition-all"></div>
-                    <h2 class="font-display text-2xl font-bold mb-4 text-foreground">Executive Summary</h2>
-                    <p class="text-muted-foreground leading-relaxed mb-6">
-                        The scan identified <span class="text-foreground font-bold">${findings.length} total vulnerabilities</span> within the target repository. These issues represent <span class="text-destructive font-bold">${totalHighRisk} high/critical risks</span> that require immediate mitigation. Please review the specific remediation patches below.
-                    </p>
-                    <div class="flex flex-wrap gap-4 text-xs font-mono">
-                        <div class="px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 text-foreground">Scan Date: ${new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</div>
-                        <div class="px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 text-foreground">Type: AI Automated Audit</div>
-                    </div>
-                </div>
-                <div class="flex flex-col gap-6">
-                    <div class="flex-1 glass-panel rounded-3xl p-6 border-l-4 border-l-destructive severity-high flex flex-col justify-center">
-                        <span class="text-muted-foreground text-sm font-medium">Critical / High Risks</span>
-                        <div class="flex items-baseline gap-2 mt-1">
-                            <span class="text-4xl font-display font-extrabold text-destructive">${totalHighRisk}</span>
-                            <span class="text-muted-foreground font-medium">Flags Raised</span>
-                        </div>
-                    </div>
-                    <div class="flex-1 glass-panel rounded-3xl p-6 border-l-4 border-l-warning severity-medium flex flex-col justify-center">
-                        <span class="text-muted-foreground text-sm font-medium">Moderate Risks</span>
-                        <div class="flex items-baseline gap-2 mt-1">
-                            <span class="text-4xl font-display font-extrabold text-warning">${totalModerateRisk}</span>
-                            <span class="text-muted-foreground font-medium">Flags Raised</span>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </section>
-
-        <section class="space-y-12">
-            <div class="flex justify-between items-end mb-8">
-                <h2 class="font-display text-3xl font-extrabold flex items-center gap-3 text-foreground">
-                    <span class="w-8 h-1 bg-primary rounded-full"></span>
-                    Vulnerability Details
-                </h2>
-                <div class="hidden md:flex bg-white/5 p-1 rounded-lg border border-white/10 font-mono text-xs">
-                    <button onclick="filterSev('all')" class="px-4 py-2 rounded-md hover:bg-white/10 transition text-white">ALL</button>
-                    <button onclick="filterSev('critical')" class="px-4 py-2 rounded-md hover:bg-destructive/20 transition text-destructive">CRITICAL</button>
-                    <button onclick="filterSev('high')" class="px-4 py-2 rounded-md hover:bg-destructive/20 transition text-destructive">HIGH</button>
-                    <button onclick="filterSev('medium')" class="px-4 py-2 rounded-md hover:bg-warning/20 transition text-warning">MEDIUM</button>
-                </div>
-            </div>
-
-            ${cardsHtml}
-
-        </section>
-
-        <section class="mt-20">
-            <div class="bg-primary/5 rounded-[2.5rem] border border-primary/20 p-8 md:p-12 relative overflow-hidden">
-                <div class="absolute top-0 right-0 p-8 opacity-10">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="120" height="120" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-primary"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-                </div>
-                <h2 class="font-display text-3xl font-extrabold mb-8 text-foreground">General Recommendations</h2>
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div class="flex gap-4">
-                        <div class="w-10 h-10 shrink-0 rounded-full bg-primary/20 flex items-center justify-center text-primary">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.85.83 6.72 2.24"/><polyline points="21 3 21 12 12 12"/></svg>
-                        </div>
-                        <div>
-                            <h4 class="font-bold mb-1 text-foreground">Keep Dependencies Updated</h4>
-                            <p class="text-sm text-muted-foreground">Regularly update all dependencies to their latest stable versions for security patches and bug fixes.</p>
-                        </div>
-                    </div>
-                    <div class="flex gap-4">
-                        <div class="w-10 h-10 shrink-0 rounded-full bg-primary/20 flex items-center justify-center text-primary">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v4"/><path d="m16.2 7.8 2.9-2.9"/><path d="M18 12h4"/><path d="m16.2 16.2 2.9 2.9"/><path d="M12 18v4"/><path d="m4.9 19.1 2.9-2.9"/><path d="M2 12h4"/><path d="m4.9 4.9 2.9 2.9"/></svg>
-                        </div>
-                        <div>
-                            <h4 class="font-bold mb-1 text-foreground">Automated Scanning</h4>
-                            <p class="text-sm text-muted-foreground">Integrate automated dependency scanning into CI/CD pipelines for continuous vulnerability identification.</p>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </section>
-
-        <div class="mt-12 text-center p-8 rounded-3xl border border-dashed border-white/10 text-muted-foreground text-sm">
-            This report was generated autonomously by the Nexus AI DevSecOps Agent.
-        </div>
-    </main>
-
-    <script>
-        function filterSev(level) {
-            document.querySelectorAll('.vulnerability-card').forEach(c => {
-                c.classList.toggle('hidden', level !== 'all' && c.dataset.sev !== level);
-            });
-        }
-    </script>
-</body>
-</html>`;
-
-      const blob = new Blob([htmlString], { type: "text/html" });
-      const url = URL.createObjectURL(blob);
-      
-      if (previewUrl) URL.revokeObjectURL(previewUrl); 
-      setPreviewUrl(url);
-      setReportFilename(`Nexus_Security_Report_${data.repo_name}.html`);
-      setShowPreview(true);
-
-    } catch (err) {
-      console.error("Failed to fetch report", err);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setPdfState({ status: "error", message: `PDF generation failed: ${msg}` });
     }
-  }, [previewUrl]);
+  }, [localRepoUrl]);
 
-  // ─── AUTO-OPEN MODAL AFTER SCAN COMPLETES ───
-  useEffect(() => {
-    if (auditId !== null && localScanning === false && !showPreview) {
-      previewHtmlReport(auditId);
+  // ── Fetch error PDF from FastAPI /pdf-error ───────────────────────────────
+  const fetchErrorPdf = useCallback(
+    async (errorMessage: string, repoName: string, stage: string) => {
+      setPdfState({ status: "loading", message: "Building failure report..." });
+      try {
+        const res = await fetch(`${BASE_URL}/pdf-error`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            error_message: errorMessage,
+            repo_url: repoName,
+            stage,
+          }),
+        });
+        if (!res.ok) throw new Error(`Server returned ${res.status}`);
+        const blob = await res.blob();
+        const url  = URL.createObjectURL(blob);
+        setBlobUrl(url);
+
+        setPdfState({
+          status: "ready",
+          url,
+          filename: `Nexus_Error_Report_${Date.now()}.pdf`,
+          isError: true,
+        });
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        setPdfState({ status: "error", message: `Error report generation failed: ${msg}` });
+      }
+    },
+    []
+  );
+
+  // ── Close & fully destroy the PDF viewer ─────────────────────────────────
+  const handleClosePdf = useCallback(() => {
+    if (blobRef.current) {
+      URL.revokeObjectURL(blobRef.current);
+      blobRef.current = null;
     }
-  }, [auditId, localScanning, showPreview, previewHtmlReport]);
+    setPdfState({ status: "idle" });
+  }, []);
 
-
+  // ── Start scan ────────────────────────────────────────────────────────────
   const startScan = () => {
     if (!localRepoUrl.trim() || localScanning) return;
     setLocalScanning(true);
     setLines([]);
-    setAuditId(null); 
+    handleClosePdf(); // clear any existing report
 
     abortRef.current = streamScan(
       localRepoUrl,
       (line) => {
         setLines((prev) => [...prev, line]);
-        if (line.content.includes("Audit archived to nexus_history.db")) {
-          const match = line.content.match(/ID:\s*(\d+)/);
-          if (match) setAuditId(parseInt(match[1], 10));
+
+        // Check for special SSE events sent by the updated backend
+        // These arrive as regular TerminalLine objects with special type/content
+        // but we also need to handle raw JSON events our backend emits:
+        try {
+          // The backend emits JSON in the content field for pdf_ready / pdf_error events
+          const raw = (line as unknown as Record<string, unknown>);
+          if (raw.type === "pdf_ready" && typeof raw.report_id === "number") {
+            fetchReportPdf(raw.report_id as number);
+          } else if (raw.type === "pdf_error") {
+            fetchErrorPdf(
+              String(raw.error_message || "Unknown error"),
+              String(raw.repo_name || localRepoUrl),
+              String(raw.stage || "unknown")
+            );
+          }
+        } catch {
+          // not a special event, ignore
         }
       },
       () => {
         setLocalScanning(false);
-        setLines((prev) => [...prev, { type: "success", content: "Scan complete. Generating interface..." }]);
+        setLines((prev) => [
+          ...prev,
+          { type: "success", content: "Scan pipeline complete." },
+        ]);
       },
       (err) => {
         setLocalScanning(false);
-        setLines((prev) => [...prev, { type: "critical", content: `Scan error: ${err.message}` }]);
+        setLines((prev) => [
+          ...prev,
+          { type: "critical", content: `Scan error: ${err.message}` },
+        ]);
+        // If we never got a pdf_ready/pdf_error signal, generate error PDF now
+        setPdfState((prev) => {
+          if (prev.status === "idle") {
+            fetchErrorPdf(err.message, localRepoUrl, "unknown");
+          }
+          return prev;
+        });
       }
     );
   };
@@ -404,158 +484,240 @@ export default function TerminalWidget({ externalLines, isScanning = false }: Te
   const stopScan = () => {
     abortRef.current?.abort();
     setLocalScanning(false);
-    setLines((prev) => [...prev, { type: "warning", content: "Scan aborted by user." }]);
+    setLines((prev) => [
+      ...prev,
+      { type: "warning", content: "Scan aborted by user." },
+    ]);
   };
 
   const clearTerminal = () => {
-      setLines(DEMO_LINES);
-      setAuditId(null);
-  }
+    setLines(DEMO_LINES);
+    handleClosePdf();
+  };
 
   const downloadLog = () => {
-    const text = lines.map((l) => `[${l.timestamp || ""}] [${l.type.toUpperCase()}] ${l.content}`).join("\n");
+    const text = lines
+      .map((l) => `[${l.timestamp || ""}] [${l.type.toUpperCase()}] ${l.content}`)
+      .join("\n");
     const blob = new Blob([text], { type: "text/plain" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement("a");
+    a.href     = url;
     a.download = `nexus_scan_${Date.now()}.log`;
     a.click();
     URL.revokeObjectURL(url);
   };
 
-  const executeDownload = () => {
-    if (!previewUrl) return;
-    const a = document.createElement("a");
-    a.href = previewUrl;
-    a.download = reportFilename || `Nexus_Security_Report_${Date.now()}.html`;
-    a.click();
-  };
+  const pdfVisible = pdfState.status !== "idle";
 
   return (
-    <>
-      <div className="terminal-window flex flex-col h-full">
+    /* 
+      Outer wrapper takes the full height passed in by the parent (.glass-panel).
+      We split it into [terminal] + [pdf viewer] using flex-col.
+    */
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        height: "100%",
+        minHeight: 0,
+        overflow: "hidden",
+      }}
+    >
+      {/* ══════════════════════════════════════════════════════════════
+          TOP HALF: Terminal
+      ══════════════════════════════════════════════════════════════ */}
+      <div
+        className="terminal-window"
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          /* When PDF is visible, terminal takes ~45% of the space; 
+             otherwise 100% */
+          flex: pdfVisible ? "0 0 45%" : "1 1 0",
+          minHeight: 0,
+          overflow: "hidden",
+          transition: "flex 0.35s ease",
+          borderBottomLeftRadius: pdfVisible ? 0 : undefined,
+          borderBottomRightRadius: pdfVisible ? 0 : undefined,
+        }}
+      >
+        {/* Terminal header */}
         <div className="terminal-header justify-between">
-          <div className="flex items-center gap-2">
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <div className="terminal-dot" style={{ background: "#ff5f57" }} />
             <div className="terminal-dot" style={{ background: "#febc2e" }} />
             <div className="terminal-dot" style={{ background: "#28c840" }} />
-            <div className="w-px h-3 bg-white/10 mx-1" />
+            <div style={{ width: 1, height: 12, background: "rgba(255,255,255,0.1)", margin: "0 4px" }} />
             <TerminalIcon size={11} style={{ color: "#00f5ff" }} />
-            <span style={{ fontFamily: "'Orbitron', monospace", fontSize: "0.6rem", letterSpacing: "0.1em", color: "#00f5ff" }}>
+            <span style={{
+              fontFamily: "'Orbitron', monospace",
+              fontSize: "0.6rem",
+              letterSpacing: "0.1em",
+              color: "#00f5ff",
+            }}>
               NEXUS EXECUTION ENGINE
             </span>
           </div>
 
-          <div className="flex items-center gap-1.5">
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
             <AnimatePresence>
               {(localScanning || isScanning) && (
-                <motion.div initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.8 }} className="flex items-center gap-1.5 px-2 py-1 rounded" style={{ background: "rgba(255,71,87,0.1)", border: "1px solid rgba(255,71,87,0.3)" }}>
-                  <motion.div animate={{ scale: [1, 1.4, 1] }} transition={{ duration: 0.8, repeat: Infinity }} className="w-1.5 h-1.5 rounded-full" style={{ background: "#ff4757" }} />
-                  <span style={{ fontFamily: "'Orbitron', monospace", fontSize: "0.5rem", color: "#ff4757", letterSpacing: "0.1em" }}>SCANNING</span>
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.8 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.8 }}
+                  style={{
+                    display: "flex", alignItems: "center", gap: 6,
+                    padding: "3px 8px", borderRadius: 4,
+                    background: "rgba(255,71,87,0.1)",
+                    border: "1px solid rgba(255,71,87,0.3)",
+                  }}
+                >
+                  <motion.div
+                    animate={{ scale: [1, 1.4, 1] }}
+                    transition={{ duration: 0.8, repeat: Infinity }}
+                    style={{ width: 6, height: 6, borderRadius: "50%", background: "#ff4757" }}
+                  />
+                  <span style={{
+                    fontFamily: "'Orbitron', monospace",
+                    fontSize: "0.5rem",
+                    color: "#ff4757",
+                    letterSpacing: "0.1em",
+                  }}>SCANNING</span>
                 </motion.div>
               )}
             </AnimatePresence>
 
-            {auditId && (
+            {/* Show PDF button if viewer is active */}
+            {pdfVisible && (
               <button
-                onClick={() => previewHtmlReport(auditId)}
-                title="View HTML Report"
-                style={{ background: "rgba(0, 245, 255, 0.1)", border: "1px solid rgba(0, 245, 255, 0.3)", cursor: "pointer", color: "#00f5ff", padding: "3px 8px", borderRadius: "4px", display: "flex", alignItems: "center", gap: "4px", fontSize: "0.55rem", fontFamily: "'Orbitron', monospace", marginRight: "4px" }}
+                onClick={() =>
+                  pdfState.status === "ready"
+                    ? window.open(pdfState.url, "_blank")
+                    : undefined
+                }
+                style={{
+                  display: "flex", alignItems: "center", gap: 4,
+                  padding: "3px 8px",
+                  background: "rgba(0,245,255,0.1)",
+                  border: "1px solid rgba(0,245,255,0.3)",
+                  borderRadius: 4,
+                  cursor: "pointer",
+                  color: "#00f5ff",
+                  fontFamily: "'Orbitron', monospace",
+                  fontSize: "0.5rem",
+                }}
               >
-                <FileText size={10} /> VIEW REPORT
+                <FileText size={9} />
+                REPORT BELOW
               </button>
             )}
 
-            <button onClick={clearTerminal} title="Clear terminal" style={{ background: "transparent", border: "none", cursor: "pointer", color: "rgba(148,163,184,0.5)", padding: "4px", borderRadius: "4px", display: "flex", alignItems: "center" }}><Trash2 size={11} /></button>
-            <button onClick={downloadLog} title="Download log" style={{ background: "transparent", border: "none", cursor: "pointer", color: "rgba(148,163,184,0.5)", padding: "4px", borderRadius: "4px", display: "flex", alignItems: "center" }}><Download size={11} /></button>
+            <button
+              onClick={clearTerminal}
+              title="Clear terminal"
+              style={{ background: "transparent", border: "none", cursor: "pointer", color: "rgba(148,163,184,0.5)", padding: 4, borderRadius: 4, display: "flex" }}
+            >
+              <Trash2 size={11} />
+            </button>
+            <button
+              onClick={downloadLog}
+              title="Download log"
+              style={{ background: "transparent", border: "none", cursor: "pointer", color: "rgba(148,163,184,0.5)", padding: 4, borderRadius: 4, display: "flex" }}
+            >
+              <Download size={11} />
+            </button>
           </div>
         </div>
 
-        <div className="terminal-output flex-1 overflow-y-auto min-h-0">
+        {/* Terminal output */}
+        <div className="terminal-output" style={{ flex: 1, overflowY: "auto", minHeight: 0 }}>
           <AnimatePresence initial={false}>
             {lines.map((line, i) => (
-              <motion.div key={i} initial={{ opacity: 0, x: -4 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.15 }} style={{ display: "flex", gap: "4px", paddingBottom: "1px", alignItems: "flex-start" }}>
-                <ChevronRight size={10} style={{ color: "rgba(0,245,255,0.3)", marginTop: "3px", flexShrink: 0 }} />
+              <motion.div
+                key={i}
+                initial={{ opacity: 0, x: -4 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ duration: 0.15 }}
+                style={{ display: "flex", gap: 4, paddingBottom: 1, alignItems: "flex-start" }}
+              >
+                <ChevronRight size={10} style={{ color: "rgba(0,245,255,0.3)", marginTop: 3, flexShrink: 0 }} />
                 <span style={{ wordBreak: "break-all" }}>{colorize(line)}</span>
               </motion.div>
             ))}
           </AnimatePresence>
+
           {(localScanning || isScanning) && (
-            <motion.div className="flex items-center gap-1 mt-1" style={{ color: "#00f5ff", fontFamily: "'JetBrains Mono', monospace", fontSize: "0.7rem" }}>
+            <motion.div
+              style={{
+                display: "flex", alignItems: "center", gap: 4, marginTop: 4,
+                color: "#00f5ff",
+                fontFamily: "'JetBrains Mono', monospace",
+                fontSize: "0.7rem",
+              }}
+            >
               <ChevronRight size={10} style={{ color: "rgba(0,245,255,0.3)" }} />
               <span style={{ color: "rgba(148,163,184,0.5)" }}>nexus@scanner:~$</span>
-              <motion.span animate={{ opacity: [1, 0, 1] }} transition={{ duration: 0.6, repeat: Infinity }} style={{ display: "inline-block", width: "6px", height: "12px", background: "#00f5ff", borderRadius: "1px" }} />
+              <motion.span
+                animate={{ opacity: [1, 0, 1] }}
+                transition={{ duration: 0.6, repeat: Infinity }}
+                style={{
+                  display: "inline-block", width: 6, height: 12,
+                  background: "#00f5ff", borderRadius: 1,
+                }}
+              />
             </motion.div>
           )}
           <div ref={bottomRef} />
         </div>
 
-        <div className="px-3 py-2.5 border-t" style={{ borderColor: "rgba(0,245,255,0.08)" }}>
-          <div className="flex gap-2 items-center">
-            <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "0.65rem", color: "rgba(0,245,255,0.5)", flexShrink: 0 }}>$</span>
-            <input value={localRepoUrl} onChange={(e) => setLocalRepoUrl(e.target.value)} onKeyDown={(e) => e.key === "Enter" && startScan()} placeholder="github.com/user/repo" style={{ flex: 1, background: "transparent", border: "none", outline: "none", fontFamily: "'JetBrains Mono', monospace", fontSize: "0.65rem", color: "#a4b0be", minWidth: 0 }} />
+        {/* Input bar */}
+        <div style={{ padding: "8px 12px", borderTop: "1px solid rgba(0,245,255,0.08)", flexShrink: 0 }}>
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <span style={{
+              fontFamily: "'JetBrains Mono', monospace",
+              fontSize: "0.65rem",
+              color: "rgba(0,245,255,0.5)",
+              flexShrink: 0,
+            }}>$</span>
+            <input
+              value={localRepoUrl}
+              onChange={(e) => setLocalRepoUrl(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && startScan()}
+              placeholder="github.com/user/repo"
+              style={{
+                flex: 1,
+                background: "transparent",
+                border: "none",
+                outline: "none",
+                fontFamily: "'JetBrains Mono', monospace",
+                fontSize: "0.65rem",
+                color: "#a4b0be",
+                minWidth: 0,
+              }}
+            />
             {localScanning ? (
-              <button onClick={stopScan} title="Stop scan"><Square size={11} style={{ color: "#ff4757", cursor: "pointer" }} /></button>
+              <button onClick={stopScan} title="Stop scan" style={{ background: "none", border: "none", cursor: "pointer", padding: 2 }}>
+                <Square size={11} style={{ color: "#ff4757" }} />
+              </button>
             ) : (
-              <button onClick={startScan} title="Start scan"><Play size={11} style={{ color: "#2ed573", cursor: "pointer" }} /></button>
+              <button onClick={startScan} title="Start scan" style={{ background: "none", border: "none", cursor: "pointer", padding: 2 }}>
+                <Play size={11} style={{ color: "#2ed573" }} />
+              </button>
             )}
           </div>
         </div>
       </div>
 
-      {/* --- PREVIEW MODAL OVERLAY --- */}
+      {/* ══════════════════════════════════════════════════════════════
+          BOTTOM HALF: PDF Viewer (renders below the terminal)
+      ══════════════════════════════════════════════════════════════ */}
       <AnimatePresence>
-        {showPreview && previewUrl && (
-          <motion.div 
-            initial={{ opacity: 0 }} 
-            animate={{ opacity: 1 }} 
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[100] flex items-center justify-center p-4 md:p-8"
-            style={{ background: "rgba(2, 6, 23, 0.8)", backdropFilter: "blur(8px)" }}
-          >
-            <motion.div 
-              initial={{ scale: 0.95, y: 20 }}
-              animate={{ scale: 1, y: 0 }}
-              exit={{ scale: 0.95, y: 20 }}
-              className="w-full h-full max-w-7xl max-h-[90vh] flex flex-col rounded-2xl overflow-hidden shadow-2xl"
-              style={{ background: "#0f172a", border: "1px solid rgba(0, 245, 255, 0.2)" }}
-            >
-              {/* Modal Header */}
-              <div className="flex justify-between items-center px-6 py-4 bg-slate-900 border-b border-white/10">
-                <div className="flex items-center gap-3">
-                  <FileText size={18} className="text-[#00f5ff]" />
-                  <h2 className="text-white font-bold" style={{ fontFamily: "'Orbitron', monospace" }}>REPORT PREVIEW</h2>
-                </div>
-                <div className="flex items-center gap-3">
-                  <button 
-                    onClick={executeDownload}
-                    className="flex items-center gap-2 px-4 py-2 rounded-md font-bold text-sm transition-all"
-                    style={{ background: "rgba(0, 245, 255, 0.15)", color: "#00f5ff", border: "1px solid rgba(0, 245, 255, 0.3)" }}
-                  >
-                    <Download size={14} /> DOWNLOAD HTML
-                  </button>
-                  <button 
-                    onClick={() => setShowPreview(false)}
-                    className="p-2 rounded-md text-slate-400 hover:text-white hover:bg-white/10 transition-all"
-                  >
-                    <X size={20} />
-                  </button>
-                </div>
-              </div>
-              
-              {/* Iframe Viewer */}
-              <div className="flex-1 w-full relative bg-[#020617]">
-                <iframe 
-                  src={previewUrl} 
-                  className="absolute inset-0 w-full h-full border-none"
-                  style={{ backgroundColor: "#020617" }}
-                  title="Report Preview"
-                />
-              </div>
-            </motion.div>
-          </motion.div>
+        {pdfVisible && (
+          <PdfViewer pdfState={pdfState} onClose={handleClosePdf} />
         )}
       </AnimatePresence>
-    </>
+    </div>
   );
 }
