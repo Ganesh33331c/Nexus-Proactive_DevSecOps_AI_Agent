@@ -12,39 +12,41 @@ export interface ScanRequest {
   webhook_url?: string;
 }
 
+/**
+ * Core terminal line type.
+ * Note: the backend also emits `pdf_ready` and `pdf_error` events.
+ * Those share this shape but carry extra fields — the TerminalWidget
+ * reads them via the raw object cast pattern.
+ */
 export interface TerminalLine {
   type: "info" | "critical" | "warning" | "success" | "debug" | "prompt";
   content: string;
   timestamp?: string;
 }
 
-// ─── Standard REST client ────────────────────────────────────
+/** Extended event emitted when the backend PDF signal fires */
+export interface PdfReadyEvent extends TerminalLine {
+  type: never;       // not a normal TerminalLine type
+  _type: "pdf_ready";
+  report_id: number;
+}
+
+export interface PdfErrorEvent extends TerminalLine {
+  type: never;
+  _type: "pdf_error";
+  error_message: string;
+  repo_name: string;
+  stage: string;
+}
+
+// ─── Standard REST client ─────────────────────────────────────────────────────
 export const apiClient = axios.create({
   baseURL: BASE_URL,
-  timeout: 60000,
-  headers: {
-    "Content-Type": "application/json",
-  },
+  timeout: 60_000,
+  headers: { "Content-Type": "application/json" },
 });
 
-// ─── Streaming Chat via SSE ──────────────────────────────────
-/**
- * Sends a chat message to /chat and streams the response back
- * via Server-Sent Events.
- *
- * @param messages  Full conversation history
- * @param onChunk   Callback for each streamed text chunk
- * @param onDone    Callback when the stream is complete
- * @param onError   Callback on error
- * @returns AbortController — call .abort() to cancel the stream
- *
- * Backend contract (FastAPI):
- *   POST /chat
- *   Body: { messages: ChatMessage[] }
- *   Response: text/event-stream
- *   Each event: data: <chunk>\n\n
- *   End event:  data: [DONE]\n\n
- */
+// ─── Streaming Chat via SSE ───────────────────────────────────────────────────
 export function streamChat(
   messages: ChatMessage[],
   onChunk: (chunk: string) => void,
@@ -66,13 +68,11 @@ export function streamChat(
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
 
-      const reader = response.body?.getReader();
+      const reader  = response.body?.getReader();
       const decoder = new TextDecoder("utf-8");
-
       if (!reader) throw new Error("Response body is null");
 
       let buffer = "";
-
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
@@ -84,15 +84,11 @@ export function streamChat(
         for (const line of lines) {
           if (line.startsWith("data: ")) {
             const payload = line.slice(6).trim();
-            if (payload === "[DONE]") {
-              onDone();
-              return;
-            }
-           if (payload) onChunk(payload.replace(/\\n/g, "\n"));
+            if (payload === "[DONE]") { onDone(); return; }
+            if (payload) onChunk(payload.replace(/\\n/g, "\n"));
           }
         }
       }
-
       onDone();
     } catch (err: unknown) {
       if (err instanceof Error && err.name === "AbortError") return;
@@ -103,18 +99,21 @@ export function streamChat(
   return controller;
 }
 
-// ─── Scan Endpoints ──────────────────────────────────────────
-export const scanRepo = (payload: ScanRequest) =>
-  apiClient.post("/scan", payload);
+// ─── Scan REST helpers ────────────────────────────────────────────────────────
+export const scanRepo        = (payload: ScanRequest) => apiClient.post("/scan", payload);
+export const getScanHistory  = ()                      => apiClient.get("/history");
+export const getScanReport   = (id: number)            => apiClient.get(`/report/${id}`);
 
-export const getScanHistory = () => apiClient.get("/history");
-
-export const getScanReport = (id: number) => apiClient.get(`/report/${id}`);
-
-// ─── Streaming Terminal Output ───────────────────────────────
+// ─── Streaming Terminal Output ────────────────────────────────────────────────
 /**
- * Connects to /scan/stream for real-time terminal output
- * during a repository scan.
+ * Connects to /scan/stream.
+ *
+ * Special events the callback may receive (cast the raw object):
+ *   { type: "pdf_ready", report_id: number, ... }
+ *   { type: "pdf_error",  error_message: string, repo_name: string, stage: string, ... }
+ *
+ * These are passed through onLine so the component can handle them
+ * without adding a new callback signature.
  */
 export function streamScan(
   repoUrl: string,
@@ -135,7 +134,7 @@ export function streamScan(
 
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
 
-      const reader = response.body?.getReader();
+      const reader  = response.body?.getReader();
       const decoder = new TextDecoder();
       if (!reader) throw new Error("No response body");
 
@@ -152,10 +151,16 @@ export function streamScan(
           if (!raw.startsWith("data: ")) continue;
           const payload = raw.slice(6).trim();
           if (payload === "[DONE]") { onDone(); return; }
+
           try {
-            const parsed: TerminalLine = JSON.parse(payload);
-            onLine(parsed);
+            // Parse every event as JSON.
+            // Normal events have { type, content, timestamp }.
+            // Special events additionally have { report_id } or { error_message, stage }.
+            // We pass all of them through onLine — the component checks the type field.
+            const parsed = JSON.parse(payload);
+            onLine(parsed as TerminalLine);
           } catch {
+            // Fallback for any non-JSON data line
             onLine({ type: "info", content: payload });
           }
         }
