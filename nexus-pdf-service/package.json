@@ -1,7 +1,7 @@
 {
   "name": "nexus-pdf-service",
   "version": "1.0.0",
-  "description": "Puppeteer-based PDF generation microservice for Nexus DevSecOps Agent",
+  "description": "PDF generation microservice for Nexus DevSecOps Agent",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
@@ -10,7 +10,7 @@
   "dependencies": {
     "cors": "^2.8.5",
     "express": "^4.18.2",
-    "puppeteer": "^22.0.0"
+    "html-pdf-node": "^1.0.8"
   },
   "engines": {
     "node": ">=18.0.0"
